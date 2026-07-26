@@ -1,5 +1,7 @@
-import requests, os, psutil, sys, jwt, pickle, json, binascii, time, urllib3, xZRcdx, base64, datetime, re, socket, threading, http.client, ssl, gzip, asyncio, gc
+import requests, os, psutil, sys, jwt, pickle, json, binascii, time, urllib3, xZRcdx, base64, datetime, re, socket, threading, ssl, gzip, asyncio, gc
 from io import BytesIO
+import http
+import http.client
 from protobuf_decoder.protobuf_decoder import Parser
 from M4H1R import *
 from datetime import datetime, timedelta
@@ -24,6 +26,10 @@ from Crypto.Util.Padding import pad, unpad
 # Global tracking dict for bot details
 bot_status = {}
 bot_lock = threading.Lock()
+
+# Dynamic Bot Tracking
+running_bots = set()
+running_bots_lock = threading.Lock()
 
 console = Console()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -427,7 +433,6 @@ class FF_CLient():
                     await self.writer.drain()
                     await asyncio.sleep(0.5)
 
-                # Custom & Beautifully Formatted Welcome Message
                 welcome_msg = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
                     f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
@@ -567,7 +572,6 @@ class FF_CLient():
 
                                     if str(sender_uid) == str(self.bot_uid): continue
 
-                                    # Handle /store Command
                                     if "/store" in msg_text or "/stor" in msg_text:
                                         log_terminal(f"Store requested by {sender_uid}", "info")
                                         
@@ -588,7 +592,6 @@ class FF_CLient():
                                         
                                         await asyncio.sleep(0.5)
 
-                                    # Handle /app Command
                                     elif "/app" in msg_text:
                                         log_terminal(f"App link requested by {sender_uid}", "info")
                                         
@@ -821,13 +824,34 @@ class FF_CLient():
 
 def load_accounts(file_path="accs.json"):
     try:
+        if not os.path.exists(file_path):
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write("{}")
+            return {}
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            accounts = {str(k): v for k, v in data.items() if str(k).isdigit()}
+            accounts = {str(k): str(v) for k, v in data.items() if str(k).isdigit()}
             return accounts
     except Exception as e:
         log_terminal(f"Error loading accounts: {e}", "error")
         return {}
+
+# ============ DYNAMIC ACCOUNT LOADER & RUNNER ============
+def dynamic_account_loader():
+    """স্বয়ংক্রিয়ভাবে accs.json ফাইল স্ক্যান করে নতুন অ্যাকাউন্ট রান করাবে"""
+    while True:
+        try:
+            accounts = load_accounts()
+            with running_bots_lock:
+                for uid, pwd in accounts.items():
+                    if uid not in running_bots:
+                        running_bots.add(uid)
+                        log_terminal(f"✨ New Account Detected! Launching Guest UID: {uid}", "success")
+                        t = threading.Thread(target=FF_CLient, args=(uid, pwd), daemon=True)
+                        t.start()
+        except Exception as e:
+            log_terminal(f"Account Loader Error: {e}", "error")
+        time.sleep(3)  # প্রতি ৩ সেকেন্ড পর নতুন অ্যাকাউন্ট স্ক্যান করবে
 
 # ============ HTTP WEB SERVER ============
 class BotHandler(BaseHTTPRequestHandler):
@@ -1002,7 +1026,7 @@ class BotHandler(BaseHTTPRequestHandler):
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 18px;
             margin-bottom: 35px;
         }
@@ -1045,7 +1069,7 @@ class BotHandler(BaseHTTPRequestHandler):
 
         .stat-card .label {
             color: rgba(255, 255, 255, 0.5);
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             text-transform: uppercase;
             letter-spacing: 1.5px;
             font-weight: 600;
@@ -1286,12 +1310,16 @@ class BotHandler(BaseHTTPRequestHandler):
 
         <div class="stats">
             <div class="stat-card">
+                <div class="number" style="color:#00f0ff;" id="totalJsonAccounts">0</div>
+                <div class="label"><i class="fas fa-users-cog" style="color:#00f0ff;"></i> Total Accounts</div>
+            </div>
+            <div class="stat-card">
                 <div class="number" id="totalBots">0</div>
-                <div class="label"><i class="fas fa-microchip"></i> Total Bots</div>
+                <div class="label"><i class="fas fa-microchip"></i> Active Running</div>
             </div>
             <div class="stat-card">
                 <div class="number" style="color:#00ff88;" id="onlineBots">0</div>
-                <div class="label"><i class="fas fa-bolt" style="color:#00ff88;"></i> Active</div>
+                <div class="label"><i class="fas fa-bolt" style="color:#00ff88;"></i> Online</div>
             </div>
             <div class="stat-card">
                 <div class="number" style="color:#ffaa00;" id="connectingBots">0</div>
@@ -1344,7 +1372,7 @@ class BotHandler(BaseHTTPRequestHandler):
                     <p id="fileNameDisplay" style="font-weight: 600; color: #ddd;">Click or Drag & Drop accs.json File Here</p>
                     <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
                 </div>
-                <button class="action-btn" onclick="uploadJsonFile()"><i class="fas fa-upload"></i> Save File</button>
+                <button class="action-btn" onclick="uploadJsonFile()"><i class="fas fa-upload"></i> Save & Auto Launch</button>
                 <span id="uploadStatus" style="margin-left: 10px; font-weight: 600;"></span>
             </div>
 
@@ -1370,10 +1398,16 @@ class BotHandler(BaseHTTPRequestHandler):
                     const online = document.getElementById('onlineBots');
                     const connecting = document.getElementById('connectingBots');
                     const offline = document.getElementById('offlineBots');
+                    const totalJsonAccs = document.getElementById('totalJsonAccounts');
                     
+                    if (data.total_accs !== undefined) {
+                        totalJsonAccs.textContent = data.total_accs;
+                    }
+
+                    const botData = data.bots || {};
                     let onlineCount = 0, connectingCount = 0, offlineCount = 0;
                     let html = '';
-                    const entries = Object.entries(data);
+                    const entries = Object.entries(botData);
                     
                     if (entries.length === 0) {
                         html = `<tr><td colspan="5" class="empty-msg"><i class="fas fa-robot"></i> No active bot processes</td></tr>`;
@@ -1466,7 +1500,7 @@ class BotHandler(BaseHTTPRequestHandler):
             if (!selectedFileContent) return alert("Select a JSON file!");
             try {
                 sendSaveRequest(JSON.parse(selectedFileContent), status);
-            } catch (e) { alert("Invalid JSON!"); }
+            } catch (e) { alert("Invalid JSON File!"); }
         }
 
         function loadJson() {
@@ -1491,15 +1525,15 @@ class BotHandler(BaseHTTPRequestHandler):
             })
             .then(res => {
                 if(res.ok) {
-                    statusElement.innerHTML = "✅ Saved!";
+                    statusElement.innerHTML = "✅ Saved & Auto Launching Bots!";
                     statusElement.style.color = "#00ff88";
-                    setTimeout(() => location.reload(), 1500);
+                    setTimeout(() => fetchBots(), 1000);
                 }
             });
         }
 
         fetchBots();
-        setInterval(fetchBots, 2500);
+        setInterval(fetchBots, 2000);
     </script>
 </body>
 </html>'''
@@ -1511,7 +1545,15 @@ class BotHandler(BaseHTTPRequestHandler):
             self.end_headers()
             with bot_lock:
                 status_copy = bot_status.copy()
-            self.wfile.write(json.dumps(status_copy).encode('utf-8'))
+            
+            # Get Total JSON Count dynamically
+            accs = load_accounts()
+            
+            response_payload = {
+                "total_accs": len(accs),
+                "bots": status_copy
+            }
+            self.wfile.write(json.dumps(response_payload).encode('utf-8'))
 
         elif self.path == '/get_accs':
             self.send_response(200)
@@ -1538,7 +1580,7 @@ class BotHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "success"}).encode('utf-8'))
-                log_terminal("accs.json updated via Web interface", "warning")
+                log_terminal("accs.json updated via Web interface. Triggering auto-loader...", "warning")
             except Exception as e:
                 self.send_response(400)
                 self.end_headers()
@@ -1565,25 +1607,14 @@ def StarT_SerVer():
     console.print(banner_table)
     console.print("\n")
 
-    accounts = load_accounts()
-    if not accounts:
-        log_terminal("No valid accounts found in accs.json!", "error")
-        return
-
-    log_terminal(f"Loaded {len(accounts)} bot account(s) from database", "info")
-
+    # Start Web Server Thread
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
-    time.sleep(1.5)
+    time.sleep(1)
 
-    threads = []
-    for uid, pwd in accounts.items():
-        log_terminal(f"Starting bot execution for Guest UID: {uid}", "info")
-        t = threading.Thread(target=FF_CLient, args=(uid, pwd))
-        t.daemon = True
-        t.start()
-        threads.append(t)
-        time.sleep(1)  
+    # Start Dynamic Account Loader Thread
+    loader_thread = threading.Thread(target=dynamic_account_loader, daemon=True)
+    loader_thread.start()
 
     try:
         while True:
