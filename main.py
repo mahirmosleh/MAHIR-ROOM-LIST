@@ -11,21 +11,46 @@ from cfonts import render , say
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
+from rich.table import Table
 import uuid
 import webbrowser
-import threading # এটি আপনার অলরেডি আছে, তাও নিশ্চিত হোন
+import threading
 import random
-# নিশ্চিত করুন Pb2 ফোল্ডারটি আপনার প্রজেক্টে আছে
 from Pb2 import MajoRLoGinrEq_pb2
 
+# Global tracking dict for bot details
 bot_status = {}
 bot_lock = threading.Lock()
 
 console = Console()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  
 
+def log_terminal(msg, msg_type="info"):
+    """সুন্দর টার্মিনাল আউটপুট প্রিন্ট করার জন্য হেলপার ফাংশন"""
+    if msg_type == "info":
+        console.print(f"[bold cyan]▪[/bold cyan] [white]{msg}[/white]")
+    elif msg_type == "success":
+        console.print(f"[bold green]✅[/bold green] [bold white]{msg}[/bold white]")
+    elif msg_type == "warning":
+        console.print(f"[bold yellow]⚠️[/bold yellow] [yellow]{msg}[/yellow]")
+    elif msg_type == "error":
+        console.print(f"[bold red]❌[/bold red] [red]{msg}[/red]")
+    elif msg_type == "bot":
+        console.print(f"[bold magenta]🤖[/bold magenta] [bold cyan]{msg}[/bold cyan]")
+
+def update_bot_info(uid, **kwargs):
+    with bot_lock:
+        if uid not in bot_status:
+            bot_status[uid] = {
+                "guest_uid": uid,
+                "account_uid": "Loading...",
+                "status": "🔄 Initializing...",
+                "last_room_id": "None",
+                "last_active": "N/A"
+            }
+        bot_status[uid].update(kwargs)
+
 async def Mahir_OpeN_RoOm_ChaT(room_id: int, chat_code: str, key: bytes, iv: bytes):
-    """Open room chat using chat_code from server response"""
     try:
         fields = {
             1: 3,
@@ -36,36 +61,23 @@ async def Mahir_OpeN_RoOm_ChaT(room_id: int, chat_code: str, key: bytes, iv: byt
                 4: str(chat_code)
             }
         }
-        
-        # CrEaTe_ProTo একটি সাধারণ ফাংশন, তাই await বাদ দেওয়া হয়েছে
         proto_bytes = CrEaTe_ProTo(fields)
         packet_hex = proto_bytes.hex()
-        
-        # EnC_PacKeT একটি সাধারণ ফাংশন, তাই await বাদ দেওয়া হয়েছে
         encrypted_packet = EnC_PacKeT(packet_hex, key, iv)
         packet_length = len(encrypted_packet) // 2
         hex_length = f"{packet_length:04x}"
-        
         zeros_needed = 6 - len(hex_length)
         packet_prefix = "121500" + ("0" * zeros_needed)
-        
         final_packet_hex = packet_prefix + hex_length + encrypted_packet
-        final_packet = bytes.fromhex(final_packet_hex)
-        
-        return final_packet
-        
+        return bytes.fromhex(final_packet_hex)
     except Exception as e:
-        print(f"❌ Mahir_OpeN_RoOm_ChaT error: {e}")
+        log_terminal(f"Mahir_OpeN_RoOm_ChaT error: {e}", "error")
         return None
 
-# ============ SEND ROOM MESSAGE ============
 async def Mahir_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: bytes, iv: bytes):
-    """Send message in room chat"""
     try:
         timestamp = int(datetime.now().timestamp())
-        # xBunnEr একটি সাধারণ ফাংশন, তাই await বাদ দেওয়া হয়েছে
         avatar = xBunnEr()
-        
         fields = {
             1: 1,
             2: {
@@ -99,8 +111,6 @@ async def Mahir_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: byt
                 14: {}
             }
         }
-        
-        # CrEaTe_ProTo এবং EnC_PacKeT থেকে await বাদ দেওয়া হয়েছে
         proto_bytes = CrEaTe_ProTo(fields)
         packet_hex = proto_bytes.hex()
         encrypted_packet = EnC_PacKeT(packet_hex, key, iv)
@@ -111,11 +121,10 @@ async def Mahir_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: byt
         final_packet_hex = packet_prefix + hex_length + encrypted_packet
         return bytes.fromhex(final_packet_hex)
     except Exception as e:
-        print(f"❌ room message error: {e}")
+        log_terminal(f"Room message error: {e}", "error")
         return None
 
 def G_AccEss(U , P):
-
     UrL = "https://100067.connect.garena.com/oauth/guest/token/grant"
     HE = {
         "Host": "100067.connect.garena.com",
@@ -139,13 +148,13 @@ def G_AccEss(U , P):
             if 'access_token' in json_data and 'open_id' in json_data:
                 return json_data['access_token'] , json_data['open_id']
             else:
-                print(f" - Missing token in response: {json_data}")
+                log_terminal(f"Missing token in response for {U}", "warning")
                 return None, None
         else: 
-            print(f" - Token request failed: {R.status_code} - {R.text}")
+            log_terminal(f"Token request failed for {U}: {R.status_code}", "error")
             return None, None
     except Exception as e: 
-        print(f" - Error in G_AccEss: {e}")
+        log_terminal(f"Error in G_AccEss: {e}", "error")
         return None, None
 
 def MajorLoGin(PyL):
@@ -168,7 +177,7 @@ def MajorLoGin(PyL):
             response = conn.getresponse()
             
             if response.status == 503:
-                print(f" - Server Busy (503). Retrying in 10s... (Attempt {attempt+1})")
+                log_terminal(f"Server Busy (503). Retrying in 10s... (Attempt {attempt+1})", "warning")
                 time.sleep(10)
                 continue
                 
@@ -179,36 +188,31 @@ def MajorLoGin(PyL):
             
             return raw_data.hex() if response.status in [200, 201] else None
         except Exception as e:
-            print(f" - MajorLoGin Error: {e}")
+            log_terminal(f"MajorLoGin Error: {e}", "error")
             time.sleep(5)
         finally:
             try: conn.close()
             except: pass
     return None
 
-
 Thread(target = AuTo_ResTartinG , daemon = True).start()
 
 class FF_CLient():
-
     def __init__(self , U , P):  
-        self.U = U # UID সেভ করে রাখা
-        with bot_lock:
-            bot_status[U] = "🔄 Initializing..."
-        # বাকি কোড...
+        self.U = str(U)
+        self.P = P
+        update_bot_info(self.U, status="🔄 Initializing...")
         self.empty_count = 0  
         self.reader = None 
         self.writer = None          
-        self.U = U
-        self.P = P
         try:
             self.Get_FiNal_ToKen_0115(U , P)
         except Exception as e:
-            print(f" - Error initializing client for {U}: {e}")
+            log_terminal(f"Error initializing client for {U}: {e}", "error")
+            update_bot_info(self.U, status="❌ Failed")
 
     async def STarT(self , JwT_ToKen , AutH_ToKen , ip , port, ip2 , port2 , key, iv , bot_uid):
-        with bot_lock:
-            bot_status[self.U] = "✅ Connected & Online"
+        update_bot_info(self.U, status="✅ Connected & Online")
         R = asyncio.Event()
         task1 = asyncio.create_task(self.ChaT(self.JwT_ToKen , self.AutH_ToKen , ip , port , key , iv , bot_uid, R))  
         await R.wait()
@@ -223,7 +227,7 @@ class FF_CLient():
                 await asyncio.sleep(0.1) 
                 await self.writer.wait_closed()
             except Exception as e: 
-                print(f' - Error CLose WriTer => {e}')
+                pass
         self.reader = None 
         self.writer = None
         gc.collect()
@@ -233,20 +237,17 @@ class FF_CLient():
         return h if len(h) % 2 == 0 else '0' + h
 
     async def send_store_shortcut(self, target_id):
-        """স্টোর এবং ক্রাফটল্যান্ড ম্যাপ শর্টকাট একসাথে পাঠানোর ফাংশন"""
         try:
-            # দুটি আলাদা শর্টকাট ডাটা
             map1_json = '{"WorkshopCode":"#FREEFIREEFEA38678BAE600F301D25D0D39DD6E64471","type":"UGCMapShare"}'
             map_json = '{"WorkshopCode":"#FREEFIREF63E5AB9D1C9BECFEF06BBF1AD75D3E1K200","type":"UGCMapShare"}'
 
-            # লুপ চালিয়ে দুটি প্যাকেটই পাঠানো হবে
             for raw_json in [map1_json, map_json]:
                 fields = {
                     1: 1, 
                     2: {
                         1: int(self.bot_uid),
                         2: int(target_id),
-                        3: 3, # 3 = Room Chat
+                        3: 3, 
                         5: int(time.time()),
                         7: 1,
                         8: raw_json, 
@@ -268,7 +269,6 @@ class FF_CLient():
                     }
                 }
 
-                # প্যাকেট জেনারেট এবং এনক্রিপশন
                 proto_hex = CrEaTe_ProTo(fields).hex()
                 encrypted = EnC_PacKeT(proto_hex, self.key, self.iv)
                 length = len(encrypted) // 2
@@ -284,28 +284,27 @@ class FF_CLient():
                 if self.writer:
                     self.writer.write(packet)
                     await self.writer.drain()
-                    # একটি প্যাকেট পাঠানোর পর ০.৫ সেকেন্ড অপেক্ষা (সার্ভার সেফটির জন্য)
                     await asyncio.sleep(0.5) 
             
-            print(f" ✅ STORE & MAP SHORTCUTS SENT TO: {target_id}")
+            log_terminal(f"STORE & MAP SHORTCUTS SENT TO: {target_id}", "success")
             return True
 
         except Exception as e:
-            print(f" - Shortcut Error: {e}")
+            log_terminal(f"Shortcut Error: {e}", "error")
             return False
 
     async def Auto_Room_Welcome(self, room_id, chat_code):
-        """রুম চ্যাট অথেন্টিকেশন, ওয়েলকাম মেসেজ এবং শর্টকাট পাঠানো"""
         try:
+            curr_time = datetime.now().strftime("%I:%M:%S %p")
+            update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time)
+
             if self.writer:
-                # ১. রুম চ্যাট ওপেন করা
                 open_pkt = await Mahir_OpeN_RoOm_ChaT(room_id, chat_code, self.key, self.iv)
                 if open_pkt:
                     self.writer.write(open_pkt)
                     await self.writer.drain()
                     await asyncio.sleep(0.5)
 
-                # ২. টেক্সট ওয়েলকাম মেসেজ পাঠানো
                 welcome_msg = (
                     "[C][B][00FF00]ᎷAH!Ꮢ ᏰOᎿ [FF0000]IS HERE! ❤\n"
                     "[00FFFF] Website: [FFFF00]mahir🗿.🗿xo🗿.🗿je\n"
@@ -318,47 +317,42 @@ class FF_CLient():
                     self.writer.write(msg_pkt)
                     await self.writer.drain()
                 
-                # ৩. স্পেশাল শর্টকাট বক্স পাঠানো (আপনার রিকুয়েস্ট অনুযায়ী)
                 await asyncio.sleep(0.5)
                 await self.send_store_shortcut(room_id)
                 
-                print(f" ✅ AUTO WELCOME & STORE BOX SENT TO ROOM: {room_id}")
+                log_terminal(f"AUTO WELCOME & STORE BOX SENT TO ROOM: {room_id}", "success")
 
         except Exception as e:
-            print(f" - Auto Welcome Error: {e}")
+            log_terminal(f"Auto Welcome Error: {e}", "error")
 
     async def OnLinE(self , Token , tok , host2 , port2 , key , iv , bot_uid):
-        global writer , writer2 , TarGeT , sQ , Nm
         retry_count = 0
         max_retries = 5
 
         while retry_count < max_retries:  
             try: 
                 if retry_count == 0:
-                    print(f" - Connecting to game {host2}:{port2}...")
+                    log_terminal(f"Connecting to game server...", "info")
                 
                 self.reader2, self.writer2 = await asyncio.wait_for(
                     asyncio.open_connection(host2, int(port2)),
                     timeout=10
                 )
-                print(f" ✅ Game connected: {host2}:{port2}")
+                log_terminal(f"Game connected successfully", "success")
 
                 await asyncio.sleep(0.5)
 
-                # Send auth token
                 self.writer2.write(bytes.fromhex(tok)) 
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # Send room name change/create
                 room_packet = Room('[C][B][FF0000]MAHIR', key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
-                print('✅ ROOM NAME CHANGE => DONE')
+                log_terminal("ROOM NAME CHANGE => DONE", "success")
 
                 await asyncio.sleep(0.4)   
 
-                # Keep connection alive and listen for room packets
                 while True:  
                     try:  
                         self.DaTa = await asyncio.wait_for(
@@ -368,25 +362,20 @@ class FF_CLient():
                         if not self.DaTa: 
                             break
                         
-                        # --- অটো মেসেজ ডিটেকশন লজিক ---
                         data_hex = self.DaTa.hex()
                         if data_hex.startswith("0e00"): 
-                            # রুম ডাটা প্যাকেট ডিকোড করা
                             decoded_str = DeCode_PackEt(data_hex[10:])
                             if decoded_str:
                                 try:
                                     packet_json = json.loads(decoded_str)
                                     f5 = packet_json.get('5', {}).get('data', {})
                                     r_id = f5.get('1', {}).get('data')
-                                    # চ্যাট কোড ফিল্ড ১০ বা ৩৬ এ থাকে
                                     c_code = f5.get('36', {}).get('data') or f5.get('10', {}).get('data')
 
                                     if r_id and c_code:
-                                        # ব্যাকগ্রাউন্ড টাস্ক হিসেবে মেসেজ পাঠানো
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code))
                                 except:
                                     pass
-                        # ----------------------------
 
                     except asyncio.TimeoutError:
                         try:
@@ -400,21 +389,20 @@ class FF_CLient():
                         break
 
             except Exception as e: 
-                print(f" - Connection attempt {retry_count+1} failed: {e}")
+                log_terminal(f"Connection attempt {retry_count+1} failed: {e}", "warning")
                 retry_count += 1
                 await asyncio.sleep(1)
 
-        print(f" - Max retries reached for OnLinE, restarting...")
+        log_terminal("Max retries reached for OnLinE, restarting...", "error")
         ResTarTinG()
 
     async def ChaT(self , Token , tok , host , port , key , iv ,bot_uid, R):
-        global writer , writer2 , TarGeT , sQ , Nm
         retry_count = 0
         max_retries = 5
 
         while retry_count < max_retries:  
             try: 
-                print(f" - Connecting to chat {host}:{port}...")
+                log_terminal("Connecting to chat server...", "info")
                 self.reader, self.writer = await asyncio.wait_for(
                     asyncio.open_connection(host , int(port)),
                     timeout=10
@@ -433,9 +421,8 @@ class FF_CLient():
                         )
                         if not self.DaTa: break
                         
-                        # --- কমান্ড ডিটেকশন লজিক ---
                         data_hex = self.DaTa.hex()
-                        if data_hex.startswith("1200"): # চ্যাট মেসেজ প্যাকেট
+                        if data_hex.startswith("1200"): 
                             decoded = DeCode_PackEt(data_hex[10:])
                             if decoded:
                                 packet_json = json.loads(decoded)
@@ -448,28 +435,25 @@ class FF_CLient():
                                     if str(sender_uid) == str(self.bot_uid): continue
 
                                     if "/store" in msg_text or "/stor" in msg_text:
-                                        print(f" 🛒 Store requested by {sender_uid}")
+                                        log_terminal(f"Store requested by {sender_uid}", "info")
                                         
-                                        # ১. টেক্সট মেসেজ
                                         info = (
                                             "[B][C][00FFFF]ᎷAH!Ꮢ ᏰOᎿ SᎿOᏒᎬ\n"
                                             "[FFFFFF]────────────────\n"
                                             "[00FF00]🤖 TCP BOT Price : [FFFF00]500 BDT\n"
                                             "[00FF00]🌐 Website       : [FFFF00]mahir🗿.🗿xo🗿.🗿je\n"
                                             "[00FF00] Owner         : [FFFF00]@MAHIR0208\n"
-                                            "[00FF00] Follow My Craftland Id   : [FFFF00]1120🙄167🙄200" # এখানে শেষে " কোটেশন মার্ক যোগ করা হয়েছে
+                                            "[00FF00] Follow My Craftland Id   : [FFFF00]1120🙄167🙄200"
                                         )
                                         txt_pkt = await Mahir_SEnd_RoOm_MsG(chat_id, info, self.bot_uid, self.key, self.iv)
                                         if txt_pkt:
                                             self.writer.write(txt_pkt)
                                             await self.writer.drain()
                                         
-                                        # ২. শর্টকাট বক্স
                                         await asyncio.sleep(0.5)
                                         await self.send_store_shortcut(chat_id)
 
                                 except: pass
-                        # -------------------------
 
                     except asyncio.TimeoutError:
                         try:
@@ -480,10 +464,9 @@ class FF_CLient():
             except Exception:
                 retry_count += 1
                 await asyncio.sleep(2)
-        print(f" - Max retries reached for ChaT")
+        log_terminal("Max retries reached for ChaT", "warning")
 
     def GeT_Key_Iv(self , serialized_data):
-
         try:
             my_message = xZRcdx.MyMessage()
             my_message.ParseFromString(serialized_data)
@@ -495,11 +478,10 @@ class FF_CLient():
             combined_timestamp = timestamp_seconds * 1_000_000_000 + timestamp_nanos
             return combined_timestamp , key , iv
         except Exception as e:
-            print(f" - Error extracting key/iv: {e}")
+            log_terminal(f"Error extracting key/iv: {e}", "error")
             return None, None, None
 
     def GeT_LoGin_PorTs(self , JwT_ToKen , PayLoad):
-        """Get login ports - FIXED with better error handling"""
         self.UrL = 'https://clientbp.common.ggbluefox.com/GetLoginData'
         self.HeadErs = {
             'Expect': '100-continue',
@@ -517,13 +499,13 @@ class FF_CLient():
             self.Res = requests.post(self.UrL , headers=self.HeadErs , data=PayLoad , verify=False, timeout=15)
             decoded = DeCode_PackEt(self.Res.content.hex())
             if not decoded:
-                print(" - Failed to decode response")
+                log_terminal("Failed to decode response", "error")
                 return None, None, None, None
 
             self.BesTo_data = json.loads(decoded)  
 
             if '32' not in self.BesTo_data or '14' not in self.BesTo_data:
-                print(f" - Missing port data in response: {self.BesTo_data.keys()}")
+                log_terminal("Missing port data in response", "warning")
                 return None, None, None, None
 
             address , address2 = self.BesTo_data['32']['data'] , self.BesTo_data['14']['data']
@@ -536,48 +518,38 @@ class FF_CLient():
                 port2 = int(port2)
 
             except Exception as e:
-                print(f" - Port parsing error: {e}")
+                log_terminal(f"Port parsing error: {e}", "error")
                 return None, None, None, None
 
-            print(f" - Got ports: Chat={ip}:{port}, Game={ip2}:{port2}")
             return ip , port , ip2 , port2
-        except requests.RequestException as e:
-            print(f" - Bad Requests: {e}")
         except Exception as e:
-            print(f" - Error getting ports: {e}")
-        print(" - Failed To Get Ports!")
+            log_terminal(f"Error getting ports: {e}", "error")
         return None, None, None, None
 
     def ToKen_GeneRaTe(self, U, P):
         try:
             if not U or not P:
-                print(" - Missing UID or Password")
+                log_terminal("Missing UID or Password", "warning")
                 return None
 
-            # ১. গ্যারিনা এক্সেস টোকেন নেওয়া
             self.A, self.O = G_AccEss(U, P)
             if not self.A or not self.O:
-                print(" - Failed to get access token")
+                log_terminal(f"Failed to get access token for UID {U}", "error")
                 return None
 
-            # ২. MajoRLoGinrEq Protobuf অবজেক্ট তৈরি (mahir.py এর লজিক অনুযায়ী)
             major_login = MajoRLoGinrEq_pb2.MajorLogin()
             major_login.event_time = str(datetime.now())[:-7]
             major_login.game_name = "free fire"
-            
-            # ডিভাইস এবং প্ল্যাটফর্ম ইনফো (Strict Live Data Style)
             major_login.platform_id = 2
             major_login.platform_sdk_id = 2
             major_login.device_type = "Handheld"
             major_login.system_hardware = "qcom"
             major_login.system_software = "Android OS 13 / API-33 (TP1A.220624.014)"
             
-            # ভার্সন কন্ট্রোল
-            self.V = '1.129.1' # mahir.py এর ডাইনামিক ভার্সন অনুযায়ী পরিবর্তন করতে পারেন
+            self.V = '1.129.1'
             major_login.client_version = self.V
             major_login.client_version_code = "2024010012"
             
-            # নেটওয়ার্ক এবং ডিসপ্লে
             major_login.telecom_operator = "Grameenphone"
             major_login.network_operator_a = "46001"
             major_login.network_type = "WIFI"
@@ -586,14 +558,12 @@ class FF_CLient():
             major_login.screen_height = 2316
             major_login.screen_dpi = "480"
             
-            # হার্ডওয়্যার (S22 Ultra Style)
             major_login.processor_details = "Qualcomm Technologies, Inc SM8450"
             major_login.memory = 12288
             major_login.gpu_renderer = "Adreno (TM) 730"
             major_login.gpu_version = "OpenGL ES 3.2 V@0548.0"
             major_login.graphics_api = "OpenGLES3"
             
-            # ইউনিক ডিভাইস আইডি (ব্যান এড়ানোর জন্য)
             major_login.unique_device_id = "f" + str(uuid.uuid4())[:15]
             
             major_login.language = "en"
@@ -605,7 +575,6 @@ class FF_CLient():
             major_login.origin_platform_type = "4"
             major_login.primary_platform_type = "4"
             
-            # মেমোরি এবং স্টোরেজ
             major_login.memory_available.version = 55
             major_login.memory_available.hidden_value = 81
             major_login.external_storage_total = 256000
@@ -614,20 +583,14 @@ class FF_CLient():
             major_login.library_token = "hash|base.apk"
             major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
             
-            # ৩. প্রোটোবাফ সিরিয়ালাইজ এবং এনক্রিপশন
             pb_data = major_login.SerializeToString()
-            
-            # mahir.py এর এনক্রিপশন মেথড (EnC_AEs যদি mahir.py এর মত হয়)
-            # এখানে main.py এর EnC_AEs ফাংশনটি ব্যবহার করা হয়েছে
             self.PaYload = bytes.fromhex(EnC_AEs(pb_data.hex()))
 
-            # ৪. মেজর লগইন রিকোয়েস্ট
             self.ResPonse = MajorLoGin(self.PaYload)
             if not self.ResPonse:
-                print(" - MajorLogin failed")
+                log_terminal("MajorLogin failed", "error")
                 return None
 
-            # ৫. রেসপন্স ডিকোড করা
             decoded_res = DeCode_PackEt(self.ResPonse)
             self.BesTo_data = json.loads(decoded_res)
             
@@ -636,26 +599,26 @@ class FF_CLient():
             self.combined_timestamp, self.key, self.iv = self.GeT_Key_Iv(bytes.fromhex(self.ResPonse))
 
             if not self.key or not self.iv:
-                print(" - Failed to extract key/iv")
+                log_terminal("Failed to extract key/iv", "error")
                 return None
 
-            # ৬. পোর্ট ডাটা সংগ্রহ
             ip, port, ip2, port2 = self.GeT_LoGin_PorTs(self.JwT_ToKen, self.PaYload)
 
             if not ip or not port:
-                print(" - Failed to get login ports")
+                log_terminal("Failed to get login ports", "error")
                 return None
 
             return self.JwT_ToKen, self.key, self.iv, self.combined_timestamp, ip, port, ip2, port2, self.bot_uid
 
         except Exception as e:
-            print(f' - Error in new Token Generate: {e}')
+            log_terminal(f"Error in Token Generate: {e}", "error")
             return None
 
     def Get_FiNal_ToKen_0115(self , U , P):
         result = self.ToKen_GeneRaTe(U , P)
         if not result:
-            print(f" - Token generation failed for {U}")
+            log_terminal(f"Token generation failed for {U}", "error")
+            update_bot_info(self.U, status="❌ Token Failed")
             return None
 
         token , key , iv , Timestamp , ip , port , ip2 , port2 , bot_uid = result
@@ -672,10 +635,11 @@ class FF_CLient():
             self.TimE_HEx = self.HeX_VaLue
             self.JwT_ToKen_ = token.encode().hex()
 
-            print(f" - Account: {self.Nm} (UID: {self.AccounT_Uid})")
+            log_terminal(f"Account UID: [bold yellow]{self.AccounT_Uid}[/bold yellow] Loaded Successfully", "bot")
+            update_bot_info(self.U, account_uid=str(self.AccounT_Uid))
 
         except Exception as e:
-            print(f" - Error In ToKen decode: {e}")
+            log_terminal(f"Error In Token decode: {e}", "error")
             return None
 
         try:
@@ -686,14 +650,12 @@ class FF_CLient():
             elif length == 8: self.__ = '00000000'
             elif length == 10: self.__ = '000000'
             elif length == 7: self.__ = '000000000'
-            else:
-                print(f' - Unexpected length: {length}')                
 
             self.Header = f'0115{self.__}{self.EncoDed_AccounT}{self.TimE_HEx}00000{self.Header}'
             self.FiNal_ToKen_0115 = self.Header + EnC_PacKeT(self.JwT_ToKen_, key, iv)
 
         except Exception as e:
-            print(f" - Error In Final Token: {e}")            
+            log_terminal(f"Error In Final Token: {e}", "error")            
             return None
 
         self.AutH_ToKen = self.FiNal_ToKen_0115
@@ -701,20 +663,18 @@ class FF_CLient():
         try:
             asyncio.run(self.STarT(self.JwT_ToKen , self.AutH_ToKen , ip, port , ip2 , port2 , key,  iv, bot_uid))
         except Exception as e:
-            print(f" - Error starting client: {e}")
+            log_terminal(f"Error starting client: {e}", "error")
 
         return self.AutH_ToKen , key , iv
 
 def load_accounts(file_path="accs.json"):
-
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # Filter out non-UID keys like "UID"
-            accounts = {k: v for k, v in data.items() if k.isdigit()}
+            accounts = {str(k): v for k, v in data.items() if str(k).isdigit()}
             return accounts
     except Exception as e:
-        print(f" - Error loading accounts: {e}")
+        log_terminal(f"Error loading accounts: {e}", "error")
         return {}
 
 # ============ HTTP WEB SERVER ============
@@ -725,266 +685,678 @@ class BotHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/html; charset=utf-8')
             self.end_headers()
             
-            html_content = '''
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>FF Bot Controller · MAHIR</title>
-                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-                <style>
-                    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                    body {
-                        min-height: 100vh;
-                        background: radial-gradient(circle at 20% 30%, #1a0a0a, #0a0505);
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        padding: 20px;
-                    }
-                    .container {
-                        width: 100%;
-                        max-width: 1100px;
-                        background: rgba(20, 10, 15, 0.85);
-                        backdrop-filter: blur(15px);
-                        border-radius: 30px;
-                        padding: 30px;
-                        border: 1px solid rgba(255, 50, 50, 0.25);
-                        box-shadow: 0 20px 60px rgba(0,0,0,0.9);
-                    }
-                    .header {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        flex-wrap: wrap;
-                        border-bottom: 2px solid rgba(255, 50, 50, 0.2);
-                        padding-bottom: 20px;
-                        margin-bottom: 30px;
-                    }
-                    .logo h1 {
-                        font-size: 2.5rem;
-                        font-weight: 900;
-                        background: linear-gradient(135deg, #ff3333, #ff6666);
-                        -webkit-background-clip: text;
-                        -webkit-text-fill-color: transparent;
-                        text-shadow: 0 0 40px rgba(255,0,0,0.3);
-                    }
-                    .logo span { color: #ff4444; font-size: 1rem; -webkit-text-fill-color: #ff6666; }
-                    .status-badge {
-                        background: rgba(0,255,100,0.15);
-                        border: 1px solid #00ff64;
-                        padding: 8px 20px;
-                        border-radius: 50px;
-                        color: #00ff64;
-                        font-weight: 600;
-                        font-size: 0.9rem;
-                    }
-                    .stats {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                        gap: 15px;
-                        margin-bottom: 30px;
-                    }
-                    .stat-card {
-                        background: rgba(255,255,255,0.04);
-                        border-radius: 16px;
-                        padding: 18px 20px;
-                        text-align: center;
-                        border: 1px solid rgba(255,255,255,0.06);
-                    }
-                    .stat-card .number {
-                        font-size: 2rem;
-                        font-weight: 700;
-                        color: #ff4444;
-                    }
-                    .stat-card .label {
-                        color: #aaa;
-                        font-size: 0.85rem;
-                        margin-top: 5px;
-                    }
-                    .table-wrap {
-                        overflow-x: auto;
-                        border-radius: 16px;
-                        border: 1px solid rgba(255,255,255,0.06);
-                    }
-                    table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        background: rgba(0,0,0,0.2);
-                    }
-                    th {
-                        background: rgba(255,50,50,0.15);
-                        color: #ff6666;
-                        padding: 15px 12px;
-                        text-align: left;
-                        font-weight: 600;
-                        font-size: 0.85rem;
-                        text-transform: uppercase;
-                        letter-spacing: 1px;
-                    }
-                    td {
-                        padding: 14px 12px;
-                        color: #ddd;
-                        border-bottom: 1px solid rgba(255,255,255,0.04);
-                        font-size: 0.95rem;
-                    }
-                    tr:hover td { background: rgba(255,50,50,0.05); }
-                    .status-online { color: #00ff88; }
-                    .status-offline { color: #ff4444; }
-                    .status-connecting { color: #ffaa00; }
-                    .badge {
-                        display: inline-block;
-                        padding: 4px 14px;
-                        border-radius: 50px;
-                        font-size: 0.75rem;
-                        font-weight: 600;
-                    }
-                    .badge-online { background: rgba(0,255,136,0.15); color: #00ff88; }
-                    .badge-offline { background: rgba(255,68,68,0.15); color: #ff4444; }
-                    .badge-connecting { background: rgba(255,170,0,0.15); color: #ffaa00; }
-                    .footer {
-                        margin-top: 25px;
-                        text-align: center;
-                        color: #666;
-                        font-size: 0.8rem;
-                    }
-                    .refresh-btn {
-                        background: rgba(255,50,50,0.15);
-                        border: 1px solid rgba(255,50,50,0.3);
-                        color: #ff6666;
-                        padding: 8px 18px;
-                        border-radius: 50px;
-                        cursor: pointer;
-                        transition: 0.3s;
-                        font-size: 0.85rem;
-                    }
-                    .refresh-btn:hover {
-                        background: rgba(255,50,50,0.25);
-                    }
-                    .empty-msg {
-                        text-align: center;
-                        padding: 40px;
-                        color: #888;
-                        font-size: 1.1rem;
-                    }
-                    @media (max-width: 600px) {
-                        .logo h1 { font-size: 1.8rem; }
-                        .stats { grid-template-columns: 1fr 1fr; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <div class="logo">
-                            <h1>🔥 MAHIR</h1>
-                            <span>FF Room Controller</span>
-                        </div>
-                        <div>
-                            <span class="status-badge"><i class="fas fa-circle" style="color:#00ff64;font-size:10px;"></i> LIVE</span>
-                            <button class="refresh-btn" onclick="location.reload()"><i class="fas fa-sync-alt"></i> Refresh</button>
-                        </div>
-                    </div>
+            html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAHIR · TCP Automation Command Center</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f0ff;
+            --secondary: #7000ff;
+            --accent: #ff0055;
+            --bg-dark: #05030a;
+            --card-bg: rgba(18, 12, 32, 0.65);
+            --border-glow: rgba(112, 0, 255, 0.4);
+        }
 
-                    <div class="stats">
-                        <div class="stat-card">
-                            <div class="number" id="totalBots">0</div>
-                            <div class="label"><i class="fas fa-robot"></i> Total Bots</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="number" style="color:#00ff88;" id="onlineBots">0</div>
-                            <div class="label"><i class="fas fa-check-circle" style="color:#00ff88;"></i> Online</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="number" style="color:#ffaa00;" id="connectingBots">0</div>
-                            <div class="label"><i class="fas fa-spinner fa-spin" style="color:#ffaa00;"></i> Connecting</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="number" style="color:#ff4444;" id="offlineBots">0</div>
-                            <div class="label"><i class="fas fa-times-circle" style="color:#ff4444;"></i> Offline</div>
-                        </div>
-                    </div>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Rajdhani', sans-serif; }
 
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>UID</th>
-                                    <th>Status</th>
-                                    <th>Nickname</th>
-                                    <th>Bot UID</th>
-                                </tr>
-                            </thead>
-                            <tbody id="botTableBody">
-                                <tr><td colspan="5" class="empty-msg"><i class="fas fa-spinner fa-spin"></i> Loading bots...</td></tr>
-                            </tbody>
-                        </table>
+        body {
+            min-height: 100vh;
+            background: #030108;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(112, 0, 255, 0.25), transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(0, 240, 255, 0.15), transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(255, 0, 85, 0.1), transparent 50%);
+            background-attachment: fixed;
+            color: #fff;
+            padding: 25px 15px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1050px;
+            background: var(--card-bg);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-radius: 28px;
+            padding: 35px;
+            border: 1px solid var(--border-glow);
+            box-shadow: 0 0 50px rgba(112, 0, 255, 0.2), inset 0 0 15px rgba(255, 255, 255, 0.05);
+            animation: containerGlow 4s infinite alternate;
+        }
+
+        @keyframes containerGlow {
+            0% { box-shadow: 0 0 40px rgba(112, 0, 255, 0.25); border-color: rgba(112, 0, 255, 0.4); }
+            100% { box-shadow: 0 0 60px rgba(0, 240, 255, 0.3); border-color: rgba(0, 240, 255, 0.5); }
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 25px;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--accent), var(--secondary));
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.6);
+            animation: pulseIcon 2s infinite;
+        }
+
+        @keyframes pulseIcon {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .logo h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 900;
+            letter-spacing: 3px;
+            background: linear-gradient(135deg, #ffffff, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+        }
+
+        .logo span {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.85rem;
+            letter-spacing: 2px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .status-badge {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid #00ff88;
+            padding: 10px 22px;
+            border-radius: 50px;
+            color: #00ff88;
+            font-weight: 700;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pulse-icon {
+            width: 9px;
+            height: 9px;
+            background-color: #00ff88;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #00ff88;
+            animation: pulseDot 1.5s infinite;
+        }
+
+        @keyframes pulseDot {
+            0% { transform: scale(0.9); opacity: 0.7; }
+            50% { transform: scale(1.3); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.7; }
+        }
+
+        .refresh-btn {
+            background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(112, 0, 255, 0.15));
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 10px 24px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .refresh-btn:hover {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 25px var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 18px;
+            margin-bottom: 35px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 20px;
+            padding: 22px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(0, 240, 255, 0.3);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .stat-card:hover::before { opacity: 1; }
+
+        .stat-card .number {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 900;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 600;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 35px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+            background: rgba(5, 3, 10, 0.4);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: rgba(112, 0, 255, 0.2);
+            color: var(--primary);
+            padding: 20px 18px;
+            text-align: left;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            border-bottom: 2px solid rgba(112, 0, 255, 0.3);
+        }
+
+        td {
+            padding: 18px;
+            color: #ddd;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            font-size: 0.95rem;
+            vertical-align: middle;
+        }
+
+        tr { transition: background 0.2s ease; }
+        tr:hover td { background: rgba(0, 240, 255, 0.03); }
+
+        .uid-badge {
+            background: linear-gradient(135deg, rgba(0, 240, 255, 0.12), rgba(112, 0, 255, 0.12));
+            border: 1px solid rgba(0, 240, 255, 0.4);
+            color: var(--primary);
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
+        }
+
+        .room-badge {
+            background: linear-gradient(135deg, rgba(255, 0, 85, 0.15), rgba(112, 0, 255, 0.15));
+            border: 1px solid rgba(255, 0, 85, 0.5);
+            color: #ff3377;
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 1.2px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 0 15px rgba(255, 0, 85, 0.2);
+            animation: pulseRoom 2s infinite;
+        }
+
+        @keyframes pulseRoom {
+            0% { box-shadow: 0 0 10px rgba(255, 0, 85, 0.2); }
+            50% { box-shadow: 0 0 20px rgba(255, 0, 85, 0.5); }
+            100% { box-shadow: 0 0 10px rgba(255, 0, 85, 0.2); }
+        }
+
+        .time-badge {
+            color: #aaa;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .guest-uid {
+            color: #888;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        .badge-online { background: rgba(0, 255, 136, 0.12); color: #00ff88; border: 1px solid rgba(0, 255, 136, 0.3); }
+        .badge-offline { background: rgba(255, 0, 85, 0.12); color: #ff0055; border: 1px solid rgba(255, 0, 85, 0.3); }
+        .badge-connecting { background: rgba(255, 170, 0, 0.12); color: #ffaa00; border: 1px solid rgba(255, 170, 0, 0.3); }
+
+        .admin-panel {
+            background: rgba(12, 8, 24, 0.6);
+            padding: 30px;
+            border-radius: 22px;
+            border: 1px dashed var(--border-glow);
+            box-shadow: inset 0 0 20px rgba(112, 0, 255, 0.05);
+        }
+
+        .dropdown { position: relative; display: inline-block; margin-top: 15px; }
+
+        .dropdown-btn {
+            background: linear-gradient(135deg, var(--secondary), var(--accent));
+            color: white;
+            border: none;
+            padding: 12px 26px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(112, 0, 255, 0.4);
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .dropdown-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 0, 85, 0.6);
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            top: 110%; left: 0;
+            background: #0d0818;
+            border: 1px solid var(--border-glow);
+            border-radius: 14px;
+            min-width: 230px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.9);
+            z-index: 100;
+            overflow: hidden;
+        }
+
+        .dropdown-menu.show { display: block; }
+
+        .dropdown-item {
+            padding: 14px 20px;
+            color: #ddd;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .dropdown-item:hover { background: rgba(112, 0, 255, 0.3); color: var(--primary); }
+
+        .content-box { display: none; margin-top: 20px; }
+        .content-box.active { display: block; }
+
+        textarea {
+            width: 100%;
+            height: 220px;
+            background: #05020a;
+            color: #00ff88;
+            font-family: 'Consolas', monospace;
+            font-size: 0.95rem;
+            padding: 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 12px;
+            outline: none;
+            resize: vertical;
+        }
+
+        .upload-area {
+            border: 2px dashed rgba(0, 240, 255, 0.3);
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(0, 240, 255, 0.05);
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 15px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+        }
+
+        .footer {
+            margin-top: 35px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+
+        .empty-msg { text-align: center; padding: 40px; color: #888; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon"><i class="fas fa-robot"></i></div>
+                <div>
+                    <h1>MAHIR ROOM LIST</h1>
+                    <span>TCP Automation Dashboard</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <span class="status-badge"><span class="pulse-icon"></span> SYSTEM ONLINE</span>
+                <button class="refresh-btn" onclick="location.reload()"><i class="fas fa-sync-alt"></i> REFRESH</button>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number" id="totalBots">0</div>
+                <div class="label"><i class="fas fa-microchip"></i> Total Bots</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" style="color:#00ff88;" id="onlineBots">0</div>
+                <div class="label"><i class="fas fa-bolt" style="color:#00ff88;"></i> Active</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" style="color:#ffaa00;" id="connectingBots">0</div>
+                <div class="label"><i class="fas fa-spinner fa-spin" style="color:#ffaa00;"></i> Connecting</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" style="color:#ff0055;" id="offlineBots">0</div>
+                <div class="label"><i class="fas fa-exclamation-triangle" style="color:#ff0055;"></i> Offline</div>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Account UID</th>
+                        <th>Active Room ID</th>
+                        <th>Status</th>
+                        <th>Last Active</th>
+                    </tr>
+                </thead>
+                <tbody id="botTableBody">
+                    <tr><td colspan="5" class="empty-msg"><i class="fas fa-spinner fa-spin"></i> Loading Realtime Data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Account JSON Manager -->
+        <div class="admin-panel">
+            <h3 style="color: var(--primary); font-family: 'Orbitron', sans-serif;"><i class="fas fa-sliders-h"></i> Configuration Control (accs.json)</h3>
+            
+            <div class="dropdown">
+                <button class="dropdown-btn" onclick="toggleDropdown()">
+                    <i class="fas fa-tools"></i> Manage Accounts <i class="fas fa-chevron-down" style="font-size: 0.8rem; margin-left: 5px;"></i>
+                </button>
+                <div class="dropdown-menu" id="dropdownMenu">
+                    <div class="dropdown-item" onclick="selectOption('upload')">
+                        <i class="fas fa-file-upload" style="color:#00ff88;"></i> Upload accs.json
                     </div>
-                    <div class="footer">
-                        <i class="fas fa-shield-alt"></i> MAHIR Bot System &bull; Port 8080
+                    <div class="dropdown-item" onclick="selectOption('edit')">
+                        <i class="fas fa-edit" style="color:#ffaa00;"></i> Live JSON Editor
                     </div>
                 </div>
-                <script>
-                    function fetchBots() {
-                        fetch('/status')
-                            .then(res => res.json())
-                            .then(data => {
-                                const tbody = document.getElementById('botTableBody');
-                                const total = document.getElementById('totalBots');
-                                const online = document.getElementById('onlineBots');
-                                const connecting = document.getElementById('connectingBots');
-                                const offline = document.getElementById('offlineBots');
-                                
-                                let onlineCount = 0, connectingCount = 0, offlineCount = 0;
-                                let html = '';
-                                const entries = Object.entries(data);
-                                
-                                if (entries.length === 0) {
-                                    html = `<tr><td colspan="5" class="empty-msg"><i class="fas fa-robot"></i> No bots loaded</td></tr>`;
-                                } else {
-                                    entries.forEach(([uid, status], index) => {
-                                        let statusText, statusClass, badgeClass;
-                                        if (status.includes('✅') || status.includes('Connected')) {
-                                            statusText = 'Online';
-                                            statusClass = 'status-online';
-                                            badgeClass = 'badge-online';
-                                            onlineCount++;
-                                        } else if (status.includes('🔄') || status.includes('Connecting')) {
-                                            statusText = 'Connecting';
-                                            statusClass = 'status-connecting';
-                                            badgeClass = 'badge-connecting';
-                                            connectingCount++;
-                                        } else {
-                                            statusText = 'Offline';
-                                            statusClass = 'status-offline';
-                                            badgeClass = 'badge-offline';
-                                            offlineCount++;
-                                        }
-                                        html += `<tr>
-                                            <td>${index + 1}</td>
-                                            <td><code style="color:#ff8888;">${uid}</code></td>
-                                            <td><span class="badge ${badgeClass}"><i class="fas fa-circle" style="font-size:8px;"></i> ${statusText}</span></td>
-                                            <td>${status}</td>
-                                            <td style="color:#888;">—</td>
-                                        </tr>`;
-                                    });
-                                }
-                                tbody.innerHTML = html;
-                                total.textContent = entries.length;
-                                online.textContent = onlineCount;
-                                connecting.textContent = connectingCount;
-                                offline.textContent = offlineCount;
-                            })
-                            .catch(() => {});
+            </div>
+
+            <div id="uploadBox" class="content-box">
+                <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                    <i class="fas fa-cloud-upload-alt" style="font-size: 2.5rem; color: var(--primary); margin-bottom: 10px;"></i>
+                    <p id="fileNameDisplay" style="font-weight: 600; color: #ddd;">Click or Drag & Drop accs.json File Here</p>
+                    <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
+                </div>
+                <button class="action-btn" onclick="uploadJsonFile()"><i class="fas fa-upload"></i> Save File</button>
+                <span id="uploadStatus" style="margin-left: 10px; font-weight: 600;"></span>
+            </div>
+
+            <div id="editBox" class="content-box">
+                <textarea id="jsonEditor" spellcheck="false"></textarea>
+                <button class="action-btn" onclick="saveJson()"><i class="fas fa-save"></i> Save Configuration</button>
+                <span id="saveStatus" style="margin-left: 10px; font-weight: 600;"></span>
+            </div>
+        </div>
+
+        <div class="footer">
+            MAHIR AUTOMATION SYSTEM &bull; ACTIVE ENGINE V1.129.1
+        </div>
+    </div>
+
+    <script>
+        function fetchBots() {
+            fetch('/status')
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('botTableBody');
+                    const total = document.getElementById('totalBots');
+                    const online = document.getElementById('onlineBots');
+                    const connecting = document.getElementById('connectingBots');
+                    const offline = document.getElementById('offlineBots');
+                    
+                    let onlineCount = 0, connectingCount = 0, offlineCount = 0;
+                    let html = '';
+                    const entries = Object.entries(data);
+                    
+                    if (entries.length === 0) {
+                        html = `<tr><td colspan="5" class="empty-msg"><i class="fas fa-robot"></i> No active bot processes</td></tr>`;
+                    } else {
+                        entries.forEach(([uid, info], index) => {
+                            let statusText, badgeClass;
+                            const statusStr = info.status || "Offline";
+
+                            if (statusStr.includes('✅') || statusStr.includes('Connected') || statusStr.includes('Online')) {
+                                statusText = 'Online';
+                                badgeClass = 'badge-online';
+                                onlineCount++;
+                            } else if (statusStr.includes('🔄') || statusStr.includes('Connecting') || statusStr.includes('Initializing')) {
+                                statusText = 'Connecting';
+                                badgeClass = 'badge-connecting';
+                                connectingCount++;
+                            } else {
+                                statusText = 'Offline';
+                                badgeClass = 'badge-offline';
+                                offlineCount++;
+                            }
+
+                            const accountUid = info.account_uid && info.account_uid !== "Loading..." 
+                                ? `<div class="uid-badge"><i class="fas fa-id-card"></i> ${info.account_uid}</div>` 
+                                : `<span style="color:#666;">Fetching UID...</span>`;
+
+                            const roomId = info.last_room_id && info.last_room_id !== "None"
+                                ? `<div class="room-badge"><i class="fas fa-door-open"></i> ${info.last_room_id}</div>`
+                                : `<span style="color:#555;">No Active Room</span>`;
+
+                            const lastActive = info.last_active || "N/A";
+
+                            html += `<tr>
+                                <td><b>${index + 1}</b></td>
+                                <td>${accountUid}</td>
+                                <td>${roomId}</td>
+                                <td><span class="badge ${badgeClass}">${statusText}</span></td>
+                                <td><span class="time-badge"><i class="far fa-clock"></i> ${lastActive}</span></td>
+                            </tr>`;
+                        });
                     }
-                    fetchBots();
-                    setInterval(fetchBots, 3000);
-                </script>
-            </body>
-            </html>
-            '''
+                    tbody.innerHTML = html;
+                    total.textContent = entries.length;
+                    online.textContent = onlineCount;
+                    connecting.textContent = connectingCount;
+                    offline.textContent = offlineCount;
+                })
+                .catch(() => {});
+        }
+
+        function toggleDropdown() {
+            document.getElementById('dropdownMenu').classList.toggle('show');
+        }
+
+        window.onclick = function(event) {
+            if (!event.target.matches('.dropdown-btn') && !event.target.matches('.dropdown-btn *')) {
+                const dropdowns = document.getElementsByClassName("dropdown-menu");
+                for (let i = 0; i < dropdowns.length; i++) {
+                    dropdowns[i].classList.remove('show');
+                }
+            }
+        }
+
+        function selectOption(option) {
+            document.getElementById('dropdownMenu').classList.remove('show');
+            document.getElementById('uploadBox').classList.remove('active');
+            document.getElementById('editBox').classList.remove('active');
+
+            if (option === 'upload') {
+                document.getElementById('uploadBox').classList.add('active');
+            } else if (option === 'edit') {
+                document.getElementById('editBox').classList.add('active');
+                loadJson();
+            }
+        }
+
+        let selectedFileContent = null;
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                document.getElementById('fileNameDisplay').textContent = "Selected: " + file.name;
+                const reader = new FileReader();
+                reader.onload = function(e) { selectedFileContent = e.target.result; };
+                reader.readAsText(file);
+            }
+        }
+
+        function uploadJsonFile() {
+            const status = document.getElementById('uploadStatus');
+            if (!selectedFileContent) return alert("Select a JSON file!");
+            try {
+                sendSaveRequest(JSON.parse(selectedFileContent), status);
+            } catch (e) { alert("Invalid JSON!"); }
+        }
+
+        function loadJson() {
+            fetch('/get_accs').then(res => res.json()).then(data => {
+                document.getElementById('jsonEditor').value = JSON.stringify(data, null, 4);
+            });
+        }
+
+        function saveJson() {
+            const editor = document.getElementById('jsonEditor');
+            const status = document.getElementById('saveStatus');
+            try {
+                sendSaveRequest(JSON.parse(editor.value), status);
+            } catch (e) { alert("Invalid JSON format!"); }
+        }
+
+        function sendSaveRequest(data, statusElement) {
+            fetch('/save_accs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => {
+                if(res.ok) {
+                    statusElement.innerHTML = "✅ Saved!";
+                    statusElement.style.color = "#00ff88";
+                    setTimeout(() => location.reload(), 1500);
+                }
+            });
+        }
+
+        fetchBots();
+        setInterval(fetchBots, 2500);
+    </script>
+</body>
+</html>'''
             self.wfile.write(html_content.encode('utf-8'))
         
         elif self.path == '/status':
@@ -992,46 +1364,75 @@ class BotHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             with bot_lock:
-                # এখানে U ভেরিয়েবল ব্যবহার করা যাবে না। 
-                # আমরা শুধু বর্তমান ডিকশনারি কপি করে পাঠাবো।
                 status_copy = bot_status.copy()
             self.wfile.write(json.dumps(status_copy).encode('utf-8'))
-        else:
-            self.send_response(404)
+
+        elif self.path == '/get_accs':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
+            try:
+                with open("accs.json", "r", encoding="utf-8") as f:
+                    content = f.read()
+                self.wfile.write(content.encode('utf-8'))
+            except Exception:
+                self.wfile.write(b"{}")
+
+    def do_POST(self):
+        if self.path == '/save_accs':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                new_data = json.loads(post_data.decode('utf-8'))
+                with open("accs.json", "w", encoding="utf-8") as f:
+                    json.dump(new_data, f, indent=4)
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}).encode('utf-8'))
+                log_terminal("accs.json updated via Web interface", "warning")
+            except Exception as e:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(str(e).encode('utf-8'))
 
     def log_message(self, format, *args):
         pass
 
 def run_web_server():
     server = HTTPServer(('0.0.0.0', 8080), BotHandler)
-    print("\n" + "="*50)
-    print("🔥 MAHIR Web Dashboard running at: http://localhost:8080")
-    print("="*50 + "\n")
+    log_terminal("MAHIR Web Dashboard running at: http://localhost:8080", "success")
     webbrowser.open('http://localhost:8080')
     server.serve_forever()
 
 def StarT_SerVer():
+    console.clear()
     print(render('MAHIR', colors=['white', 'red'], align='center'))
-    TexT = f'[TarGeT InFo] > BoTs arE OnLine\n[BoT sTaTus] > [bold green]ConEcTed SuccEssFuLy[/bold green]'
-    panel = Panel(Align.center(TexT) , title="[bold red]FF - RooM[/bold red]", border_style="bright_red" , padding=(1, 2) , expand=False)
-    console.print(panel)
+    
+    # Clean Rich Table Banner for Terminal
+    banner_table = Table(title="🔥 Free Fire Bot Automation Console 🔥", style="bold red", show_header=True, header_style="bold magenta")
+    banner_table.add_column("System Status", justify="center")
+    banner_table.add_column("Dashboard Link", justify="center")
+    banner_table.add_row("[bold green]System Active & Running[/bold green]", "[cyan]http://localhost:8080[/cyan]")
+    console.print(banner_table)
+    console.print("\n")
 
     accounts = load_accounts()
     if not accounts:
-        print(" - No valid accounts found!")
+        log_terminal("No valid accounts found in accs.json!", "error")
         return
 
-    print(f" - Loaded {len(accounts)} account(s)")
+    log_terminal(f"Loaded {len(accounts)} bot account(s) from database", "info")
 
-    # Start web server in background
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
-    time.sleep(2)
+    time.sleep(1.5)
 
     threads = []
     for uid, pwd in accounts.items():
-        print(f" - Starting bot for UID: {uid}")
+        log_terminal(f"Starting bot execution for Guest UID: {uid}", "info")
         t = threading.Thread(target=FF_CLient, args=(uid, pwd))
         t.daemon = True
         t.start()
@@ -1042,7 +1443,7 @@ def StarT_SerVer():
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n - Stopping server...")
+        log_terminal("Stopping server process gracefully...", "warning")
 
 if __name__ == "__main__":
     StarT_SerVer()
