@@ -483,10 +483,16 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                room_packet = Room('[C][B][FF0000]MAHIR', key, iv)
+                # --- এখানে পরিবর্তন করা হয়েছে ---
+                colors = ["FF0000", "FFFF00", "00FF00", "00FFFF", "FFFFFF"]
+                random_color = random.choice(colors)
+                room_name = f'[C][B][{random_color}]MAHIR'
+                
+                room_packet = Room(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
-                log_terminal("ROOM NAME CHANGE => DONE", "success")
+                log_terminal(f"ROOM NAME CHANGE => {room_name}", "success")
+                # ------------------------------
 
                 await asyncio.sleep(0.4)   
 
