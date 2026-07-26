@@ -1,32 +1,39 @@
-import requests , os , psutil , sys , jwt , pickle , json , binascii , time , urllib3 , xZRcdx , base64 , datetime , re ,socket , threading , http.client , ssl , gzip , asyncio , gc
+import requests, os, psutil, sys, jwt, pickle, json, binascii, time, urllib3, xZRcdx, base64, datetime, re, socket, threading, http.client, ssl, gzip, asyncio, gc
 from io import BytesIO
 from protobuf_decoder.protobuf_decoder import Parser
 from M4H1R import *
-from datetime import datetime , timedelta
+from datetime import datetime, timedelta
 from google.protobuf.timestamp_pb2 import Timestamp
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
-from cfonts import render , say
+from cfonts import render, say
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
 from rich.table import Table
 import uuid
 import webbrowser
-import threading
 import random
 from Pb2 import MajoRLoGinrEq_pb2
+
+# Cryptography modules for real packet encryption
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 
 # Global tracking dict for bot details
 bot_status = {}
 bot_lock = threading.Lock()
 
 console = Console()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Master Static Key & IV
+Key, Iv = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56]), bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
+
+# ============ SAFE FALLBACK & PACKET ENGINE HELPERS ============
 def log_terminal(msg, msg_type="info"):
-    """সুন্দর টার্মিনাল আউটপুট প্রিন্ট করার জন্য হেলপার ফাংশন"""
+    """টার্মিনাল আউটপুট প্রিন্ট করার জন্য হেলপার ফাংশন"""
     if msg_type == "info":
         console.print(f"[bold cyan]▪[/bold cyan] [white]{msg}[/white]")
     elif msg_type == "success":
@@ -50,6 +57,145 @@ def update_bot_info(uid, **kwargs):
             }
         bot_status[uid].update(kwargs)
 
+def ResTarTinG():
+    log_terminal("Restarting script process...", "warning")
+    try:
+        p = psutil.Process(os.getpid())
+        for f in p.open_files():
+            try: os.close(f.fd)
+            except: pass
+        for conn in p.net_connections(kind='inet'):
+            try:
+                if conn.fd != -1: os.close(conn.fd)
+            except: pass
+    except: pass
+    time.sleep(0.5)
+    os.execv(sys.executable, ['python'] + sys.argv)
+
+def AuTo_ResTartinG():
+    while True:
+        time.sleep(3600)  # Restart every 1 hour to prevent memory leaks
+        log_terminal("Auto restarting process...", "warning")
+        ResTarTinG()
+
+# Real Crypto / Packet Processing Helpers
+def EnC_AEs(HeX):
+    cipher = AES.new(Key, AES.MODE_CBC, Iv)
+    return cipher.encrypt(pad(bytes.fromhex(HeX), AES.block_size)).hex()
+
+def DEc_AEs(HeX):
+    cipher = AES.new(Key, AES.MODE_CBC, Iv)
+    return unpad(cipher.decrypt(bytes.fromhex(HeX)), AES.block_size).hex()
+
+def EnC_PacKeT(HeX, K, V): 
+    return AES.new(K, AES.MODE_CBC, V).encrypt(pad(bytes.fromhex(HeX), 16)).hex()
+
+def DEc_PacKeT(HeX, K, V):
+    return unpad(AES.new(K, AES.MODE_CBC, V).decrypt(bytes.fromhex(HeX)), 16).hex()
+
+def EnC_Vr(N):
+    if N < 0: return b''
+    H = []
+    while True:
+        BesTo = N & 0x7F
+        N >>= 7
+        if N: BesTo |= 0x80
+        H.append(BesTo)
+        if not N: break
+    return bytes(H)
+
+def CrEaTe_VarianT(field_number, value):
+    field_header = (field_number << 3) | 0
+    return EnC_Vr(field_header) + EnC_Vr(value)
+
+def CrEaTe_LenGTh(field_number, value):
+    field_header = (field_number << 3) | 2
+    encoded_value = value.encode() if isinstance(value, str) else value
+    return EnC_Vr(field_header) + EnC_Vr(len(encoded_value)) + encoded_value
+
+def CrEaTe_ProTo(fields):
+    packet = bytearray()    
+    for field, value in fields.items():
+        if isinstance(value, dict):
+            nested_packet = CrEaTe_ProTo(value)
+            packet.extend(CrEaTe_LenGTh(field, nested_packet))
+        elif isinstance(value, int):
+            packet.extend(CrEaTe_VarianT(field, value))           
+        elif isinstance(value, (str, bytes)):
+            packet.extend(CrEaTe_LenGTh(field, value))           
+    return packet
+
+def DecodE_HeX(H):
+    R = hex(H) 
+    F = str(R)[2:]
+    return "0" + F if len(F) == 1 else F
+
+def Fix_PackEt(parsed_results):
+    result_dict = {}
+    for result in parsed_results:
+        field_data = {'wire_type': result.wire_type}
+        if result.wire_type in ["varint", "string", "bytes"]:
+            field_data['data'] = result.data
+        elif result.wire_type == 'length_delimited':
+            field_data["data"] = Fix_PackEt(result.data.results)
+        result_dict[result.field] = field_data
+    return result_dict
+
+def DeCode_PackEt(input_text):
+    try:
+        parsed_results = Parser().parse(input_text)
+        parsed_results_dict = Fix_PackEt(parsed_results)
+        return json.dumps(parsed_results_dict)
+    except Exception:
+        return None
+
+def xBunnEr():
+    avatar_list = [
+        '902000016', '902000031', '902000011', '902000065',
+        '902000204', '902000192', '902000191', '902000179',
+        '902000133', '902045001', '902038023', '902048004',
+        '902039014', '902000063', '902000306', '902047009'
+    ]
+    return int(random.choice(avatar_list))
+
+def GeneRaTePk(Pk, N, K, V):
+    PkEnc = EnC_PacKeT(Pk, K, V)
+    _ = DecodE_HeX(int(len(PkEnc) // 2))
+    if len(_) == 2: HeadEr = N + "000000"
+    elif len(_) == 3: HeadEr = N + "00000"
+    elif len(_) == 4: HeadEr = N + "0000"
+    elif len(_) == 5: HeadEr = N + "000"
+    else: HeadEr = N + "00"
+    return bytes.fromhex(HeadEr + _ + PkEnc)
+
+def Room(room_name, K, V):
+    fields = {
+        1: 2,
+        2: {
+            1: 1, 2: 15, 3: 3, 4: room_name,
+            6: 8, 7: 30, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 36981056,
+            15: [
+                {1: "IDC1", 2: 3000, 3: "BD"},
+                {1: "IDC2", 2: 3000, 3: "BD"}
+            ]
+        }
+    }
+    return GeneRaTePk(CrEaTe_ProTo(fields).hex(), '0e0b', K, V)
+
+def Ua():
+    return "Dalvik/2.1.0 (Linux; U; Android 13; SM-S901B Build/TP1A.220624.014)"
+
+def GeT_Time(exp):
+    if not exp: return 0, 0, 0
+    now = int(time.time())
+    diff = exp - now
+    if diff <= 0: return 0, 0, 0
+    h, rem = divmod(diff, 3600)
+    m, s = divmod(rem, 60)
+    return h, m, s
+
+# ============ PACKET / BOT LOGIC ============
 async def Mahir_OpeN_RoOm_ChaT(room_id: int, chat_code: str, key: bytes, iv: bytes):
     try:
         fields = {
@@ -62,14 +208,7 @@ async def Mahir_OpeN_RoOm_ChaT(room_id: int, chat_code: str, key: bytes, iv: byt
             }
         }
         proto_bytes = CrEaTe_ProTo(fields)
-        packet_hex = proto_bytes.hex()
-        encrypted_packet = EnC_PacKeT(packet_hex, key, iv)
-        packet_length = len(encrypted_packet) // 2
-        hex_length = f"{packet_length:04x}"
-        zeros_needed = 6 - len(hex_length)
-        packet_prefix = "121500" + ("0" * zeros_needed)
-        final_packet_hex = packet_prefix + hex_length + encrypted_packet
-        return bytes.fromhex(final_packet_hex)
+        return GeneRaTePk(proto_bytes.hex(), '1215', key, iv)
     except Exception as e:
         log_terminal(f"Mahir_OpeN_RoOm_ChaT error: {e}", "error")
         return None
@@ -112,19 +251,12 @@ async def Mahir_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: byt
             }
         }
         proto_bytes = CrEaTe_ProTo(fields)
-        packet_hex = proto_bytes.hex()
-        encrypted_packet = EnC_PacKeT(packet_hex, key, iv)
-        packet_length = len(encrypted_packet) // 2
-        hex_length = f"{packet_length:04x}"
-        zeros_needed = 6 - len(hex_length)
-        packet_prefix = "121500" + ("0" * zeros_needed)
-        final_packet_hex = packet_prefix + hex_length + encrypted_packet
-        return bytes.fromhex(final_packet_hex)
+        return GeneRaTePk(proto_bytes.hex(), '1215', key, iv)
     except Exception as e:
         log_terminal(f"Room message error: {e}", "error")
         return None
 
-def G_AccEss(U , P):
+def G_AccEss(U, P):
     UrL = "https://100067.connect.garena.com/oauth/guest/token/grant"
     HE = {
         "Host": "100067.connect.garena.com",
@@ -142,11 +274,11 @@ def G_AccEss(U , P):
         "client_id": "100067",
     }
     try:
-        R = requests.post(UrL , headers = HE , data = dT, timeout=10)
+        R = requests.post(UrL, headers=HE, data=dT, timeout=10)
         if R.status_code == 200: 
             json_data = R.json()
             if 'access_token' in json_data and 'open_id' in json_data:
-                return json_data['access_token'] , json_data['open_id']
+                return json_data['access_token'], json_data['open_id']
             else:
                 log_terminal(f"Missing token in response for {U}", "warning")
                 return None, None
@@ -195,10 +327,10 @@ def MajorLoGin(PyL):
             except: pass
     return None
 
-Thread(target = AuTo_ResTartinG , daemon = True).start()
+Thread(target=AuTo_ResTartinG, daemon=True).start()
 
 class FF_CLient():
-    def __init__(self , U , P):  
+    def __init__(self, U, P):  
         self.U = str(U)
         self.P = P
         update_bot_info(self.U, status="🔄 Initializing...")
@@ -206,19 +338,19 @@ class FF_CLient():
         self.reader = None 
         self.writer = None          
         try:
-            self.Get_FiNal_ToKen_0115(U , P)
+            self.Get_FiNal_ToKen_0115(U, P)
         except Exception as e:
             log_terminal(f"Error initializing client for {U}: {e}", "error")
             update_bot_info(self.U, status="❌ Failed")
 
-    async def STarT(self , JwT_ToKen , AutH_ToKen , ip , port, ip2 , port2 , key, iv , bot_uid):
+    async def STarT(self, JwT_ToKen, AutH_ToKen, ip, port, ip2, port2, key, iv, bot_uid):
         update_bot_info(self.U, status="✅ Connected & Online")
         R = asyncio.Event()
-        task1 = asyncio.create_task(self.ChaT(self.JwT_ToKen , self.AutH_ToKen , ip , port , key , iv , bot_uid, R))  
+        task1 = asyncio.create_task(self.ChaT(self.JwT_ToKen, self.AutH_ToKen, ip, port, key, iv, bot_uid, R))  
         await R.wait()
         await asyncio.sleep(0.5)
-        task2 = asyncio.create_task(self.OnLinE(self.JwT_ToKen , self.AutH_ToKen , ip2 , port2 , key , iv , bot_uid))
-        await asyncio.gather(task1)
+        task2 = asyncio.create_task(self.OnLinE(self.JwT_ToKen, self.AutH_ToKen, ip2, port2, key, iv, bot_uid))
+        await asyncio.gather(task1, task2)
 
     async def sF(self):
         if self.writer:
@@ -226,7 +358,7 @@ class FF_CLient():
                 self.writer.close() 
                 await asyncio.sleep(0.1) 
                 await self.writer.wait_closed()
-            except Exception as e: 
+            except Exception: 
                 pass
         self.reader = None 
         self.writer = None
@@ -269,17 +401,7 @@ class FF_CLient():
                     }
                 }
 
-                proto_hex = CrEaTe_ProTo(fields).hex()
-                encrypted = EnC_PacKeT(proto_hex, self.key, self.iv)
-                length = len(encrypted) // 2
-                len_hex = self.dec_to_hex(length)
-
-                if len(len_hex) == 2: header = "1215000000"
-                elif len(len_hex) == 3: header = "121500000"
-                elif len(len_hex) == 4: header = "12150000"
-                else: header = "1215000"
-
-                packet = bytes.fromhex(header + len_hex + encrypted)
+                packet = GeneRaTePk(CrEaTe_ProTo(fields).hex(), '1215', self.key, self.iv)
 
                 if self.writer:
                     self.writer.write(packet)
@@ -293,7 +415,7 @@ class FF_CLient():
             log_terminal(f"Shortcut Error: {e}", "error")
             return False
 
-    async def Auto_Room_Welcome(self, room_id, chat_code):
+    async def Auto_Room_Welcome(self, room_id, chat_code, user_name="Player"):
         try:
             curr_time = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time)
@@ -305,13 +427,23 @@ class FF_CLient():
                     await self.writer.drain()
                     await asyncio.sleep(0.5)
 
+                # Custom & Beautifully Formatted Welcome Message
                 welcome_msg = (
-                    "[C][B][00FF00]ᎷAH!Ꮢ ᏰOᎿ [FF0000]IS HERE! ❤\n"
-                    "[00FFFF] Website: [FFFF00]mahir🗿.🗿xo🗿.🗿je\n"
-                    "[00FFFF]💰TCP BOT Price: [FFFF00]500 BDT\n"
-                    "[00FF00]👑 Owner   : [FFFF00]@MAHIR0208\n"
-                    "[00FF00] Follow My Craftland Id   : [FFFF00]1120🙄167🙄200"
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                    f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
+                    f"[C][00FF7F]Wᴇʟᴄᴏᴍᴇ ᴛᴏ Oᴜʀ Rᴏᴏᴍ! ✨\n"
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                    f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
+                    f"[C][FFD700]─────────────────────\n"
+                    f"[C][FFFF00] Type [00FF00]/store [FFFF00]to view items\n"
+                    f"[C][FFFF00] Type [00FF00]/app [FFFF00]for Android App\n"
+                    f"[C][FFD700]─────────────────────\n"
+                    f"[C][00BFFF]📢 Telegram : [FFFFFF]@THEMAHIRWORLD\n"
+                    f"[C][FF69B4]🎬 TikTok   : [FFFFFF]@MAHIR__222\n"
+                    f"[C][00FF00]🛠️ Follow My Craftland Id : \n [FFFF00]1120🙄167🙄200\n"
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖"
                 )
+                
                 msg_pkt = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg, self.bot_uid, self.key, self.iv)
                 if msg_pkt:
                     self.writer.write(msg_pkt)
@@ -325,7 +457,7 @@ class FF_CLient():
         except Exception as e:
             log_terminal(f"Auto Welcome Error: {e}", "error")
 
-    async def OnLinE(self , Token , tok , host2 , port2 , key , iv , bot_uid):
+    async def OnLinE(self, Token, tok, host2, port2, key, iv, bot_uid):
         retry_count = 0
         max_retries = 5
 
@@ -371,19 +503,20 @@ class FF_CLient():
                                     f5 = packet_json.get('5', {}).get('data', {})
                                     r_id = f5.get('1', {}).get('data')
                                     c_code = f5.get('36', {}).get('data') or f5.get('10', {}).get('data')
+                                    inviter_name = f5.get('9', {}).get('data', {}).get('1', {}).get('data', 'Player')
 
                                     if r_id and c_code:
-                                        asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code))
-                                except:
+                                        asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, user_name=inviter_name))
+                                except Exception:
                                     pass
 
                     except asyncio.TimeoutError:
                         try:
                             self.writer2.write(b'\x00')
                             await self.writer2.drain()
-                        except:
+                        except Exception:
                             break
-                    except (ConnectionResetError , ConnectionAbortedError , asyncio.IncompleteReadError , BrokenPipeError , OSError): 
+                    except (ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError, BrokenPipeError, OSError): 
                         break 
                     except Exception:
                         break
@@ -396,7 +529,7 @@ class FF_CLient():
         log_terminal("Max retries reached for OnLinE, restarting...", "error")
         ResTarTinG()
 
-    async def ChaT(self , Token , tok , host , port , key , iv ,bot_uid, R):
+    async def ChaT(self, Token, tok, host, port, key, iv, bot_uid, R):
         retry_count = 0
         max_retries = 5
 
@@ -404,7 +537,7 @@ class FF_CLient():
             try: 
                 log_terminal("Connecting to chat server...", "info")
                 self.reader, self.writer = await asyncio.wait_for(
-                    asyncio.open_connection(host , int(port)),
+                    asyncio.open_connection(host, int(port)),
                     timeout=10
                 )
 
@@ -434,16 +567,19 @@ class FF_CLient():
 
                                     if str(sender_uid) == str(self.bot_uid): continue
 
+                                    # Handle /store Command
                                     if "/store" in msg_text or "/stor" in msg_text:
                                         log_terminal(f"Store requested by {sender_uid}", "info")
                                         
                                         info = (
-                                            "[B][C][00FFFF]ᎷAH!Ꮢ ᏰOᎿ SᎿOᏒᎬ\n"
-                                            "[FFFFFF]────────────────\n"
-                                            "[00FF00]🤖 TCP BOT Price : [FFFF00]500 BDT\n"
-                                            "[00FF00]🌐 Website       : [FFFF00]mahir🗿.🗿xo🗿.🗿je\n"
-                                            "[00FF00] Owner         : [FFFF00]@MAHIR0208\n"
-                                            "[00FF00] Follow My Craftland Id   : [FFFF00]1120🙄167🙄200"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                                            "[C][B][00FFFF]⚡ MAHIR BOT STORE ⚡\n"
+                                            "[C][FFD700]─────────────────────\n"
+                                            "[C][00FF00]🤖 TCP BOT Price : [FFFF00]500 BDT\n"
+                                            "[C][00FF00]🌐 Website       : [FFFF00]mahir🫡.xo🫡.🫡je\n"
+                                            "[C][00FF00]👤 Owner Telegram : [FFFF00]@MAHIR0208\n"
+                                            "[C][00FF00]🛠️ Craftland Map  : [FFFF00]1120🙄167🙄200\n"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖"
                                         )
                                         txt_pkt = await Mahir_SEnd_RoOm_MsG(chat_id, info, self.bot_uid, self.key, self.iv)
                                         if txt_pkt:
@@ -451,37 +587,53 @@ class FF_CLient():
                                             await self.writer.drain()
                                         
                                         await asyncio.sleep(0.5)
-                                        await self.send_store_shortcut(chat_id)
 
-                                except: pass
+                                    # Handle /app Command
+                                    elif "/app" in msg_text:
+                                        log_terminal(f"App link requested by {sender_uid}", "info")
+                                        
+                                        app_info = (
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                                            "[C][B][00FFFF]📱 MAHIR TCP OFFICIAL APP 📱\n"
+                                            "[C][FFD700]─────────────────────\n"
+                                            "[C][FFFFFF]Download Link:\n"
+                                            "[C][00FF00]https🙂://www🙂.mediafire🙂.com🙂/file🙂/lvykrek🙂51q17hae🙂/MAHIR_TCP🙂.apk\n"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖"
+                                        )
+                                        txt_pkt = await Mahir_SEnd_RoOm_MsG(chat_id, app_info, self.bot_uid, self.key, self.iv)
+                                        if txt_pkt:
+                                            self.writer.write(txt_pkt)
+                                            await self.writer.drain()
+
+                                except Exception: pass
 
                     except asyncio.TimeoutError:
                         try:
                             self.writer.write(b'\x00')
                             await self.writer.drain()
-                        except: break
+                        except Exception: break
                     except Exception: break
             except Exception:
                 retry_count += 1
                 await asyncio.sleep(2)
         log_terminal("Max retries reached for ChaT", "warning")
 
-    def GeT_Key_Iv(self , serialized_data):
+    def GeT_Key_Iv(self, serialized_data):
         try:
             my_message = xZRcdx.MyMessage()
             my_message.ParseFromString(serialized_data)
-            timestamp , key , iv = my_message.field21 , my_message.field22 , my_message.field23
+            timestamp, key, iv = my_message.field21, my_message.field22, my_message.field23
             timestamp_obj = Timestamp()
             timestamp_obj.FromNanoseconds(timestamp)
             timestamp_seconds = timestamp_obj.seconds
             timestamp_nanos = timestamp_obj.nanos
             combined_timestamp = timestamp_seconds * 1_000_000_000 + timestamp_nanos
-            return combined_timestamp , key , iv
+            return combined_timestamp, key, iv
         except Exception as e:
             log_terminal(f"Error extracting key/iv: {e}", "error")
             return None, None, None
 
-    def GeT_LoGin_PorTs(self , JwT_ToKen , PayLoad):
+    def GeT_LoGin_PorTs(self, JwT_ToKen, PayLoad):
         self.UrL = 'https://clientbp.common.ggbluefox.com/GetLoginData'
         self.HeadErs = {
             'Expect': '100-continue',
@@ -496,7 +648,7 @@ class FF_CLient():
             'Accept-Encoding': 'gzip, deflate, br',
         }       
         try:
-            self.Res = requests.post(self.UrL , headers=self.HeadErs , data=PayLoad , verify=False, timeout=15)
+            self.Res = requests.post(self.UrL, headers=self.HeadErs, data=PayLoad, verify=False, timeout=15)
             decoded = DeCode_PackEt(self.Res.content.hex())
             if not decoded:
                 log_terminal("Failed to decode response", "error")
@@ -508,11 +660,11 @@ class FF_CLient():
                 log_terminal("Missing port data in response", "warning")
                 return None, None, None, None
 
-            address , address2 = self.BesTo_data['32']['data'] , self.BesTo_data['14']['data']
+            address, address2 = self.BesTo_data['32']['data'], self.BesTo_data['14']['data']
 
             try:
-                ip , port = address.rsplit(":", 1)
-                ip2 , port2 = address2.rsplit(":", 1)
+                ip, port = address.rsplit(":", 1)
+                ip2, port2 = address2.rsplit(":", 1)
 
                 port = int(port)
                 port2 = int(port2)
@@ -521,7 +673,7 @@ class FF_CLient():
                 log_terminal(f"Port parsing error: {e}", "error")
                 return None, None, None, None
 
-            return ip , port , ip2 , port2
+            return ip, port, ip2, port2
         except Exception as e:
             log_terminal(f"Error getting ports: {e}", "error")
         return None, None, None, None
@@ -614,21 +766,21 @@ class FF_CLient():
             log_terminal(f"Error in Token Generate: {e}", "error")
             return None
 
-    def Get_FiNal_ToKen_0115(self , U , P):
-        result = self.ToKen_GeneRaTe(U , P)
+    def Get_FiNal_ToKen_0115(self, U, P):
+        result = self.ToKen_GeneRaTe(U, P)
         if not result:
             log_terminal(f"Token generation failed for {U}", "error")
             update_bot_info(self.U, status="❌ Token Failed")
             return None
 
-        token , key , iv , Timestamp , ip , port , ip2 , port2 , bot_uid = result
+        token, key, iv, Timestamp, ip, port, ip2, port2, bot_uid = result
         self.JwT_ToKen = token        
 
         try:
             self.AfTer_DeC_JwT = jwt.decode(token, options={"verify_signature": False})
             self.AccounT_Uid = self.AfTer_DeC_JwT.get('account_id')
             self.Nm = self.AfTer_DeC_JwT.get('nickname')
-            self.H , self.M , self.S = GeT_Time(self.AfTer_DeC_JwT.get('exp'))
+            self.H, self.M, self.S = GeT_Time(self.AfTer_DeC_JwT.get('exp'))
             self.Vr = self.AfTer_DeC_JwT.get('release_version')
             self.EncoDed_AccounT = hex(self.AccounT_Uid)[2:]
             self.HeX_VaLue = DecodE_HeX(Timestamp)
@@ -661,11 +813,11 @@ class FF_CLient():
         self.AutH_ToKen = self.FiNal_ToKen_0115
 
         try:
-            asyncio.run(self.STarT(self.JwT_ToKen , self.AutH_ToKen , ip, port , ip2 , port2 , key,  iv, bot_uid))
+            asyncio.run(self.STarT(self.JwT_ToKen, self.AutH_ToKen, ip, port, ip2, port2, key, iv, bot_uid))
         except Exception as e:
             log_terminal(f"Error starting client: {e}", "error")
 
-        return self.AutH_ToKen , key , iv
+        return self.AutH_ToKen, key, iv
 
 def load_accounts(file_path="accs.json"):
     try:
@@ -980,12 +1132,6 @@ class BotHandler(BaseHTTPRequestHandler):
             color: #aaa;
             font-size: 0.85rem;
             font-weight: 600;
-        }
-
-        .guest-uid {
-            color: #888;
-            font-family: monospace;
-            font-size: 0.9rem;
         }
 
         .badge {
