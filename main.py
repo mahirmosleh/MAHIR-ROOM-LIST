@@ -30,6 +30,7 @@ bot_lock = threading.Lock()
 # Dynamic Bot Tracking
 running_bots = set()
 running_bots_lock = threading.Lock()
+json_lock = threading.Lock()
 
 console = Console()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -173,21 +174,6 @@ def GeneRaTePk(Pk, N, K, V):
     elif len(_) == 5: HeadEr = N + "000"
     else: HeadEr = N + "00"
     return bytes.fromhex(HeadEr + _ + PkEnc)
-
-def Room(room_name, K, V):
-    fields = {
-        1: 2,
-        2: {
-            1: 1, 2: 15, 3: 3, 4: room_name,
-            6: 8, 7: 30, 8: 1, 9: 1, 11: 1, 12: 2,
-            14: 36981056,
-            15: [
-                {1: "IDC1", 2: 3000, 3: "BD"},
-                {1: "IDC2", 2: 3000, 3: "BD"}
-            ]
-        }
-    }
-    return GeneRaTePk(CrEaTe_ProTo(fields).hex(), '0e0b', K, V)
 
 def Ua():
     return "Dalvik/2.1.0 (Linux; U; Android 13; SM-S901B Build/TP1A.220624.014)"
@@ -344,10 +330,13 @@ class FF_CLient():
         self.reader = None 
         self.writer = None          
         try:
-            self.Get_FiNal_ToKen_0115(U, P)
+            res = self.Get_FiNal_ToKen_0115(U, P)
+            if not res:
+                # টোকেন পেতে ব্যর্থ হলে JSON থেকে মুছে যাবে
+                remove_invalid_account(self.U)
         except Exception as e:
-            log_terminal(f"Error initializing client for {U}: {e}", "error")
-            update_bot_info(self.U, status="❌ Failed")
+            log_terminal(f"Error initializing client for UID {U}: {e}", "error")
+            remove_invalid_account(self.U)
 
     async def STarT(self, JwT_ToKen, AutH_ToKen, ip, port, ip2, port2, key, iv, bot_uid):
         update_bot_info(self.U, status="✅ Connected & Online")
@@ -434,19 +423,19 @@ class FF_CLient():
                     await asyncio.sleep(0.5)
 
                 welcome_msg = (
-                    f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
                     f"[C][00FF7F]Wᴇʟᴄᴏᴍᴇ ᴛᴏ Oᴜʀ Rᴏᴏᴍ! ✨\n"
-                    f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
-                    f"[C][FFD700]─────────────────────\n"
+                    f"[C][FFD700]────────────────\n"
                     f"[C][FFFF00] Type [00FF00]/store [FFFF00]to view items\n"
                     f"[C][FFFF00] Type [00FF00]/app [FFFF00]for Android App\n"
-                    f"[C][FFD700]─────────────────────\n"
+                    f"[C][FFD700]────────────────\n"
                     f"[C][00BFFF]📢 Telegram : [FFFFFF]@THEMAHIRWORLD\n"
                     f"[C][FF69B4]🎬 TikTok   : [FFFFFF]@MAHIR__222\n"
                     f"[C][00FF00]🛠️ Follow My Craftland Id : \n [FFFF00]1120🙄167🙄200\n"
-                    f"[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖"
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━❖"
                 )
                 
                 msg_pkt = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg, self.bot_uid, self.key, self.iv)
@@ -483,16 +472,25 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- এখানে পরিবর্তন করা হয়েছে ---
+                # --- কালার এবং র‍্যান্ডম রুম (4v4 বেশি নিবে) ---
                 colors = ["FF0000", "FFFF00", "00FF00", "00FFFF", "FFFFFF"]
                 random_color = random.choice(colors)
                 room_name = f'[C][B][{random_color}]MAHIR'
                 
-                room_packet = Room(room_name, key, iv)
+                # দ্রষ্টব্য: যদি Room6v6 ফাংশন না থাকে তবে Room4v4 ই ব্যবহার হবে
+                room_funcs = [Room2v2, Room4v4, Room4v4]                 
+                
+                selected_room_func = random.choices(room_funcs, weights=[2, 7, 1], k=1)[0]
+                
+                # প্যাকেট জেনারেট ও সেন্ড
+                room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
-                log_terminal(f"ROOM NAME CHANGE => {room_name}", "success")
-                # ------------------------------
+                
+                # কোন মুড সিলেক্ট হলো তা টার্মিনালে দেখানো
+                mode_name = "4v4" if selected_room_func == Room4v4 else ("2v2" if selected_room_func == Room2v2 else "6v6")
+                log_terminal(f"ROOM NAME CHANGE => {room_name} ({mode_name} Mode)", "success")
+                # -------------------------------------------
 
                 await asyncio.sleep(0.4)   
 
@@ -582,14 +580,14 @@ class FF_CLient():
                                         log_terminal(f"Store requested by {sender_uid}", "info")
                                         
                                         info = (
-                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                                             "[C][B][00FFFF]⚡ MAHIR BOT STORE ⚡\n"
-                                            "[C][FFD700]─────────────────────\n"
+                                            "[C][FFD700]────────────────\n"
                                             "[C][00FF00]🤖 TCP BOT Price : [FFFF00]500 BDT\n"
                                             "[C][00FF00]🌐 Website       : [FFFF00]mahir🫡.xo🫡.🫡je\n"
                                             "[C][00FF00]👤 Owner Telegram : [FFFF00]@MAHIR0208\n"
                                             "[C][00FF00]🛠️ Craftland Map  : [FFFF00]1120🙄167🙄200\n"
-                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━❖"
                                         )
                                         txt_pkt = await Mahir_SEnd_RoOm_MsG(chat_id, info, self.bot_uid, self.key, self.iv)
                                         if txt_pkt:
@@ -602,12 +600,12 @@ class FF_CLient():
                                         log_terminal(f"App link requested by {sender_uid}", "info")
                                         
                                         app_info = (
-                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖\n"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                                             "[C][B][00FFFF]📱 MAHIR TCP OFFICIAL APP 📱\n"
-                                            "[C][FFD700]─────────────────────\n"
+                                            "[C][FFD700]────────────────\n"
                                             "[C][FFFFFF]Download Link:\n"
                                             "[C][00FF00]https🙂://www🙂.mediafire🙂.com🙂/file🙂/lvykrek🙂51q17hae🙂/MAHIR_TCP🙂.apk\n"
-                                            "[C][FFD700]❖━━━━━━━━━━━━━━━━━━━━❖"
+                                            "[C][FFD700]❖━━━━━━━━━━━━━━━❖"
                                         )
                                         txt_pkt = await Mahir_SEnd_RoOm_MsG(chat_id, app_info, self.bot_uid, self.key, self.iv)
                                         if txt_pkt:
@@ -841,6 +839,28 @@ def load_accounts(file_path="accs.json"):
     except Exception as e:
         log_terminal(f"Error loading accounts: {e}", "error")
         return {}
+
+def remove_invalid_account(uid, file_path="accs.json"):
+    """যে অ্যাকাউন্ট চালু হবে না তাকে টার্মিনালে নোটিফাই করে accs.json থেকে রিমুভ করবে"""
+    with json_lock:
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                uid_str = str(uid)
+                if uid_str in data:
+                    del data[uid_str]
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=4)
+                    log_terminal(f"❌ Failed to Login: UID [bold yellow]{uid_str}[/bold yellow] -> Automatically Removed from accs.json", "error")
+        except Exception as e:
+            log_terminal(f"Error removing account {uid}: {e}", "error")
+
+    # Clean up tracking status
+    with bot_lock:
+        if uid in bot_status:
+            del bot_status[uid]
 
 # ============ DYNAMIC ACCOUNT LOADER & RUNNER ============
 def dynamic_account_loader():
