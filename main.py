@@ -566,19 +566,21 @@ class FF_CLient():
                                     u_name = user_data.get('3', {}).get('data', 'Player') # User Name
 
                                     # ৩. শর্ত সাপেক্ষে ওয়েলকাম মেসেজ ট্রিগার
-                                    # যদি Room ID, Bot UID অথবা User ID-র যেকোনো একটি পরিবর্তন হয়, 
-                                    # তবে welcome_tracking-এ নতুন কি (Key) তৈরি হবে এবং সাথে সাথে মেসেজ যাবে।
                                     if r_id and c_code and u_uid:
-                                        asyncio.create_task(
-                                            self.Auto_Room_Welcome(
+                                        # 🔥 ডিটেক্ট হওয়ার ০.৩ সেকেন্ড পর পাঠানোর জন্য একটি ইন্টারনাল ফাংশন
+                                        async def send_welcome_with_delay():
+                                            await asyncio.sleep(0.3) # ০.৩ সেকেন্ড অপেক্ষা
+                                            await self.Auto_Room_Welcome(
                                                 r_id, 
                                                 c_code, 
                                                 u_uid, 
                                                 user_name=u_name
                                             )
-                                        )
                                         
-                                        # বান্ডেল চেঞ্জ কমান্ড কল করা
+                                        # টাস্কটি রান করা হলো
+                                        asyncio.create_task(send_welcome_with_delay())
+                                        
+                                        # বান্ডেল চেঞ্জ কমান্ড সাথে সাথেই কল করা হলো
                                         asyncio.create_task(send_random_bundle(bot_uid=int(bot_uid), key=key, iv=iv, region="BD"))
 
                                 except Exception:
