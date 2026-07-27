@@ -501,36 +501,29 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- [সংশোধিত] অ্যাকাউন্ট বণ্টন লজিক (১০:৫:৫) ---
-                # accs.json ফাইল থেকে সব আইডি লোড করে সিরিয়াল চেক করা
-                all_accs = load_accounts()
-                uid_list = list(all_accs.keys())
-                
+                # --- [বণ্টন নীতি] প্রতি ২০টি অ্যাকাউন্টের জন্য ১০:৫:৫ লজিক ---
                 try:
-                    # বর্তমানে এই বটের আইডি কত নম্বর পজিশনে আছে (Index)
-                    my_idx = uid_list.index(self.U)
-                except ValueError:
+                    all_accs = load_accounts()
+                    uid_list = list(all_accs.keys())
+                    my_idx = uid_list.index(self.U) if self.U in uid_list else 0
+                except:
                     my_idx = 0
                 
-                # ২০ এর মডুলাস নিয়ে বণ্টন নির্ধারণ
-                pos = my_idx % 20 
-                
-                if pos < 10: # ০ থেকে ৯ (প্রথম ১০টি)
+                pos = my_idx % 20
+                if pos < 10: # প্রথম ১০টি
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                elif pos < 15: # ১০ থেকে ১৪ (পরের ৫টি)
+                elif pos < 15: # পরের ৫টি
                     selected_room_func = Room4v4
                     mode_name = "4v4"
-                else: # ১৫ থেকে ১৯ (শেষ ৫টি)
+                else: # শেষ ৫টি
                     selected_room_func = Room6v6
                     mode_name = "6v6"
                 
-                # রুমের নাম ও কালার সেটআপ
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
-                random_color = random.choice(colors)
-                room_name = f'[C][B][{random_color}]MAHIR'
+                room_name = f'[C][B][{random.choice(colors)}]MAHIR'
                 
-                # রুম প্যাকেট পাঠিয়ে দেওয়া
+                # রুম প্যাকেট পাঠানো
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
@@ -556,16 +549,38 @@ class FF_CLient():
                                 try:
                                     packet_json = json.loads(decoded_str)
                                     f5 = packet_json.get('5', {}).get('data', {})
-                                    r_id = f5.get('1', {}).get('data')
-                                    c_code = f5.get('36', {}).get('data') or f5.get('10', {}).get('data')
-                                    inviter_name = f5.get('9', {}).get('data', {}).get('1', {}).get('data', 'Player')
                                     
-                                    # User UID সংগ্রহ
-                                    user_uid = f5.get('1', {}).get('data', {}).get('2', {}).get('data')
+                                    # ১. রুম ইনফো ও বট ইনফো বের করা (ফিল্ড ২ থেকে)
+                                    room_data = f5.get('2', {}).get('data', {})
+                                    r_id = room_data.get('1', {}).get('data') # Room ID
+                                    # চ্যাট কোড ৩৬, ১০ বা ৪০ এ থাকতে পারে
+                                    c_code = room_data.get('36', {}).get('data') or room_data.get('10', {}).get('data') or room_data.get('40', {}).get('data')
+                                    
+                                    # ২. ইউজার ইনফো বের করা (ফিল্ড ১ থেকে)
+                                    user_data = f5.get('1', {}).get('data', {})
+                                    # যদি ১ এ না থাকে (ইনভাইট প্যাকেটের ক্ষেত্রে), তবে ৯ চেক করবে
+                                    if not isinstance(user_data, dict) or not user_data:
+                                        user_data = f5.get('9', {}).get('data', {}).get('1', {}).get('data', {})
+                                    
+                                    u_uid = user_data.get('2', {}).get('data') # User ID
+                                    u_name = user_data.get('3', {}).get('data', 'Player') # User Name
 
-                                    if r_id and c_code:
-                                        # Auto welcome পাঠানো
-                                        asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, user_uid, user_name=inviter_name))
+                                    # ৩. শর্ত সাপেক্ষে ওয়েলকাম মেসেজ ট্রিগার
+                                    # যদি Room ID, Bot UID অথবা User ID-র যেকোনো একটি পরিবর্তন হয়, 
+                                    # তবে welcome_tracking-এ নতুন কি (Key) তৈরি হবে এবং সাথে সাথে মেসেজ যাবে।
+                                    if r_id and c_code and u_uid:
+                                        asyncio.create_task(
+                                            self.Auto_Room_Welcome(
+                                                r_id, 
+                                                c_code, 
+                                                u_uid, 
+                                                user_name=u_name
+                                            )
+                                        )
+                                        
+                                        # বান্ডেল চেঞ্জ কমান্ড কল করা
+                                        asyncio.create_task(send_random_bundle(bot_uid=int(bot_uid), key=key, iv=iv, region="BD"))
+
                                 except Exception:
                                     pass
 
@@ -574,13 +589,17 @@ class FF_CLient():
                             self.writer2.write(b'\x00')
                             await self.writer2.drain()
                         except: break
-                    except: break
+                    except (ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError, BrokenPipeError, OSError):
+                        break 
+                    except Exception:
+                        break
 
             except Exception as e: 
-                log_terminal(f"Game server retry...", "warning")
+                log_terminal(f"Game connection retry (Attempt {retry_count+1})...", "warning")
                 retry_count += 1
                 await asyncio.sleep(1)
 
+        log_terminal("Max retries reached for OnLinE, restarting bot process...", "error")
         ResTarTinG()
 
     async def ChaT(self, Token, tok, host, port, key, iv, bot_uid, R):
