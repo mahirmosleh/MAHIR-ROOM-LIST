@@ -445,7 +445,7 @@ class FF_CLient():
                     f"[C][FFD700]────────────────\n"
                     f"[C][00BFFF]📢 Telegram : [FFFFFF]@THEMAHIRWORLD\n"
                     f"[C][FF69B4]🎬 TikTok   : [FFFFFF]@MAHIR__222\n"
-                    f"[C][00FF00]🛠️ Follow My Craftland Id\n 
+                    f"[C][00FF00]🛠️ Follow My Craftland Id\n"
                     f"[C][00FF00]🛠️ MY UID [FFFF00]1120🙄167🙄200\n"
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖"
                 )
