@@ -25,6 +25,8 @@ from Crypto.Util.Padding import pad, unpad
 
 # Global tracking dict for bot details
 bot_status = {}
+# ওয়েলকাম মেসেজ ট্র্যাকিং ডিকশনারি
+welcome_tracking = {}
 bot_lock = threading.Lock()
 
 # Dynamic Bot Tracking
@@ -421,12 +423,28 @@ class FF_CLient():
             log_terminal(f"Shortcut Error: {e}", "error")
             return False
 
-    async def Auto_Room_Welcome(self, room_id, chat_code, user_name="Player"):
+    async def Auto_Room_Welcome(self, room_id, chat_code, user_uid, user_name="Player"):
         try:
-            curr_time = datetime.now().strftime("%I:%M:%S %p")
-            update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time)
+            # ইউনিক ট্র্যাকিং কি (বট আইডি + রুম আইডি + ইউজার আইডি)
+            tracking_key = f"{self.bot_uid}_{room_id}_{user_uid}"
+            current_time = time.time()
+            
+            # ট্র্যাকিং চেক: যদি ৩ মিনিট (১৮০ সেকেন্ড) পার না হয়, তবে রিটার্ন করবে
+            if tracking_key in welcome_tracking:
+                last_time = welcome_tracking[tracking_key]
+                if current_time - last_time < 60:
+                    # ১ মিনিট পার হয়নি, তাই মেসেজ পাঠাবে না
+                    return
+
+            # ট্র্যাকিং টাইম আপডেট
+            welcome_tracking[tracking_key] = current_time
+
+            # ডাটা আপডেট (ড্যাশবোর্ডের জন্য)
+            curr_time_str = datetime.now().strftime("%I:%M:%S %p")
+            update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time_str)
 
             if self.writer:
+                # রুম চ্যাট ওপেন প্যাকেট
                 open_pkt = await Mahir_OpeN_RoOm_ChaT(room_id, chat_code, self.key, self.iv)
                 if open_pkt:
                     self.writer.write(open_pkt)
@@ -446,7 +464,7 @@ class FF_CLient():
                     f"[C][00BFFF]📢 Telegram : [FFFFFF]@THEMAHIRWORLD\n"
                     f"[C][FF69B4]🎬 TikTok   : [FFFFFF]@MAHIR__222\n"
                     f"[C][00FF00]🛠️ Follow My Craftland Id\n"
-                    f"[C][00FF00]🛠️ MY UID [FFFF00]1120🙄167🙄200\n"
+                    f"[C][00FF7F]🛠️ MY UID [FFFF00]1120🙄167🙄200\n"
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖"
                 )
                 
@@ -458,7 +476,7 @@ class FF_CLient():
                 await asyncio.sleep(0.1)
                 await self.send_store_shortcut(room_id)
                 
-                log_terminal(f"AUTO WELCOME & STORE BOX SENT TO ROOM: {room_id}", "success")
+                log_terminal(f"WELCOME SENT TO: {user_name} (UID: {user_uid}) IN ROOM: {room_id}", "success")
 
         except Exception as e:
             log_terminal(f"Auto Welcome Error: {e}", "error")
@@ -479,35 +497,45 @@ class FF_CLient():
                 log_terminal(f"Game connected successfully", "success")
 
                 await asyncio.sleep(0.1)
-
                 self.writer2.write(bytes.fromhex(tok)) 
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- কালার এবং র‍্যান্ডম রুম (4v4 সবথেকে বেশিবার আসবে) ---
+                # --- [সংশোধিত] অ্যাকাউন্ট বণ্টন লজিক (১০:৫:৫) ---
+                # accs.json ফাইল থেকে সব আইডি লোড করে সিরিয়াল চেক করা
+                all_accs = load_accounts()
+                uid_list = list(all_accs.keys())
+                
+                try:
+                    # বর্তমানে এই বটের আইডি কত নম্বর পজিশনে আছে (Index)
+                    my_idx = uid_list.index(self.U)
+                except ValueError:
+                    my_idx = 0
+                
+                # ২০ এর মডুলাস নিয়ে বণ্টন নির্ধারণ
+                pos = my_idx % 20 
+                
+                if pos < 10: # ০ থেকে ৯ (প্রথম ১০টি)
+                    selected_room_func = Room2v2
+                    mode_name = "2v2"
+                elif pos < 15: # ১০ থেকে ১৪ (পরের ৫টি)
+                    selected_room_func = Room4v4
+                    mode_name = "4v4"
+                else: # ১৫ থেকে ১৯ (শেষ ৫টি)
+                    selected_room_func = Room6v6
+                    mode_name = "6v6"
+                
+                # রুমের নাম ও কালার সেটআপ
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 random_color = random.choice(colors)
                 room_name = f'[C][B][{random_color}]MAHIR'
                 
-                # রুম ফাংশন লিস্ট (এখন 6v6 সরাসরি ব্যবহার করা হচ্ছে)
-                room_funcs = [Room2v2, Room4v4, Room6v6]
-
-                selected_room_func = random.choices(room_funcs, weights=[4, 3, 3], k=1)[0]
-                
-                # প্যাকেট জেনারেট ও সেন্ড
+                # রুম প্যাকেট পাঠিয়ে দেওয়া
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
                 
-                # টার্মিনাল লগে দেখানোর জন্য মুড নাম বের করা
-                if selected_room_func == Room2v2:
-                    mode_name = "2v2"
-                elif selected_room_func == Room4v4:
-                    mode_name = "4v4"
-                else:
-                    mode_name = "6v6"
-                
-                log_terminal(f"ROOM NAME CHANGE => {room_name} ({mode_name} Mode Selected)", "success")
+                log_terminal(f"BOT #{my_idx+1} | MODE: {mode_name} | ROOM: {room_name}", "success")
                 # ------------------------------------------------------
 
                 await asyncio.sleep(0.4)   
@@ -531,9 +559,13 @@ class FF_CLient():
                                     r_id = f5.get('1', {}).get('data')
                                     c_code = f5.get('36', {}).get('data') or f5.get('10', {}).get('data')
                                     inviter_name = f5.get('9', {}).get('data', {}).get('1', {}).get('data', 'Player')
+                                    
+                                    # User UID সংগ্রহ
+                                    user_uid = f5.get('1', {}).get('data', {}).get('2', {}).get('data')
 
                                     if r_id and c_code:
-                                        asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, user_name=inviter_name))
+                                        # Auto welcome পাঠানো
+                                        asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, user_uid, user_name=inviter_name))
                                 except Exception:
                                     pass
 
@@ -541,19 +573,14 @@ class FF_CLient():
                         try:
                             self.writer2.write(b'\x00')
                             await self.writer2.drain()
-                        except Exception:
-                            break
-                    except (ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError, BrokenPipeError, OSError): 
-                        break 
-                    except Exception:
-                        break
+                        except: break
+                    except: break
 
             except Exception as e: 
-                log_terminal(f"Connection attempt {retry_count+1} failed: {e}", "warning")
+                log_terminal(f"Game server retry...", "warning")
                 retry_count += 1
                 await asyncio.sleep(1)
 
-        log_terminal("Max retries reached for OnLinE, restarting...", "error")
         ResTarTinG()
 
     async def ChaT(self, Token, tok, host, port, key, iv, bot_uid, R):
