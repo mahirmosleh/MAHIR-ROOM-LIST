@@ -432,7 +432,7 @@ class FF_CLient():
             # ট্র্যাকিং চেক: যদি ৩ মিনিট (১৮০ সেকেন্ড) পার না হয়, তবে রিটার্ন করবে
             if tracking_key in welcome_tracking:
                 last_time = welcome_tracking[tracking_key]
-                if current_time - last_time < 60:
+                if current_time - last_time < 1:
                     # ১ মিনিট পার হয়নি, তাই মেসেজ পাঠাবে না
                     return
 
