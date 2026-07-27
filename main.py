@@ -31,6 +31,11 @@ bot_lock = threading.Lock()
 running_bots = set()
 running_bots_lock = threading.Lock()
 
+# Global Mode Target Counts & Assigned Map
+mode_counts = {"2v2": 0, "4v4": 0, "6v6": 0}
+assigned_modes = {}  # {uid: "2v2" / "4v4" / "6v6"}
+mode_lock = threading.Lock()
+
 console = Console()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -483,28 +488,34 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- কালার এবং র‍্যান্ডম রুম (4v4 সবথেকে বেশিবার আসবে) ---
+                # --- কালার এবং ডাইনামিক রুম অ্যাসাইনমেন্ট ---
                 colors = ["FF0000", "FFFF00", "00FF00", "00FFFF", "FFFFFF"]
                 random_color = random.choice(colors)
                 room_name = f'[C][B][{random_color}]MAHIR'
                 
-                # রুম ফাংশন লিস্ট (এখন 6v6 সরাসরি ব্যবহার করা হচ্ছে)
-                room_funcs = [Room2v2, Room4v4, Room6v6]
+                # চেক করা হচ্ছে ইউজারের নির্দিষ্ট রুম মোড সিলেক্ট করা আছে কিনা
+                with mode_lock:
+                    target_mode = assigned_modes.get(self.U)
 
-                selected_room_func = random.choices(room_funcs, weights=[1, 5, 4], k=1)[0]
-                
+                if target_mode == "2v2":
+                    selected_room_func = Room2v2
+                    mode_name = "2v2"
+                elif target_mode == "4v4":
+                    selected_room_func = Room4v4
+                    mode_name = "4v4"
+                elif target_mode == "6v6":
+                    selected_room_func = Room6v6
+                    mode_name = "6v6"
+                else:
+                    # যদি নির্দিষ্ট মোড সিলেক্ট করা না থাকে তবে ডিফল্ট র‍্যান্ডম
+                    room_funcs = [Room2v2, Room4v4, Room6v6]
+                    selected_room_func = random.choices(room_funcs, weights=[1, 5, 4], k=1)[0]
+                    mode_name = "2v2" if selected_room_func == Room2v2 else ("4v4" if selected_room_func == Room4v4 else "6v6")
+
                 # প্যাকেট জেনারেট ও সেন্ড
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
-                
-                # টার্মিনাল লগে দেখানোর জন্য মুড নাম বের করা
-                if selected_room_func == Room2v2:
-                    mode_name = "2v2"
-                elif selected_room_func == Room4v4:
-                    mode_name = "4v4"
-                else:
-                    mode_name = "6v6"
                 
                 log_terminal(f"ROOM NAME CHANGE => {room_name} ({mode_name} Mode Selected)", "success")
                 # ------------------------------------------------------
@@ -857,17 +868,51 @@ def load_accounts(file_path="accs.json"):
         log_terminal(f"Error loading accounts: {e}", "error")
         return {}
 
+def allocate_modes():
+    """অ্যাকাউন্টগুলোতে ব্যবহারকারীর ইনপুট অনুযায়ী 2v2, 4v4, 6v6 ডিস্ট্রিবিউট করে"""
+    accounts = load_accounts()
+    uids = list(accounts.keys())
+    
+    with mode_lock:
+        cnt_2v2 = mode_counts["2v2"]
+        cnt_4v4 = mode_counts["4v4"]
+        cnt_6v6 = mode_counts["6v6"]
+        
+        assigned_modes.clear()
+        idx = 0
+        
+        # 2v2 Allocation
+        for _ in range(cnt_2v2):
+            if idx < len(uids):
+                assigned_modes[uids[idx]] = "2v2"
+                idx += 1
+                
+        # 4v4 Allocation
+        for _ in range(cnt_4v4):
+            if idx < len(uids):
+                assigned_modes[uids[idx]] = "4v4"
+                idx += 1
+                
+        # 6v6 Allocation
+        for _ in range(cnt_6v6):
+            if idx < len(uids):
+                assigned_modes[uids[idx]] = "6v6"
+                idx += 1
+
 # ============ DYNAMIC ACCOUNT LOADER & RUNNER ============
 def dynamic_account_loader():
     """স্বয়ংক্রিয়ভাবে accs.json ফাইল স্ক্যান করে নতুন অ্যাকাউন্ট রান করাবে"""
     while True:
         try:
             accounts = load_accounts()
+            allocate_modes()
+            
             with running_bots_lock:
                 for uid, pwd in accounts.items():
                     if uid not in running_bots:
                         running_bots.add(uid)
-                        log_terminal(f"✨ New Account Detected! Launching Guest UID: {uid}", "success")
+                        mode_str = assigned_modes.get(uid, "Random")
+                        log_terminal(f"✨ New Account Detected! Launching Guest UID: {uid} (Mode: {mode_str})", "success")
                         t = threading.Thread(target=FF_CLient, args=(uid, pwd), daemon=True)
                         t.start()
         except Exception as e:
@@ -1289,6 +1334,52 @@ class BotHandler(BaseHTTPRequestHandler):
             background: rgba(0, 240, 255, 0.05);
         }
 
+        /* NEW MODE SELECTOR STYLES */
+        .mode-selection-box {
+            background: rgba(0, 240, 255, 0.03);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .mode-inputs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .mode-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .mode-input-group label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: 1px;
+        }
+
+        .mode-input-group input {
+            background: #05020a;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 10px;
+            color: #fff;
+            font-size: 1rem;
+            font-family: 'Orbitron', monospace;
+            outline: none;
+            text-align: center;
+        }
+
+        .mode-input-group input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+        }
+
         .action-btn {
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             color: white;
@@ -1393,13 +1484,32 @@ class BotHandler(BaseHTTPRequestHandler):
                     <p id="fileNameDisplay" style="font-weight: 600; color: #ddd;">Click or Drag & Drop accs.json File Here</p>
                     <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
                 </div>
-                <button class="action-btn" onclick="uploadJsonFile()"><i class="fas fa-upload"></i> Save & Auto Launch</button>
-                <span id="uploadStatus" style="margin-left: 10px; font-weight: 600;"></span>
             </div>
 
             <div id="editBox" class="content-box">
                 <textarea id="jsonEditor" spellcheck="false"></textarea>
-                <button class="action-btn" onclick="saveJson()"><i class="fas fa-save"></i> Save Configuration</button>
+            </div>
+
+            <!-- Mode Allocation Options Panel -->
+            <div id="modeSelectorBox" class="mode-selection-box" style="display: none;">
+                <h4 style="color: var(--primary); font-family: 'Orbitron', sans-serif; font-size: 0.95rem;">
+                    <i class="fas fa-gamepad"></i> Select Bot Count per Room Mode
+                </h4>
+                <div class="mode-inputs-grid">
+                    <div class="mode-input-group">
+                        <label for="cnt2v2">2v2 Mode</label>
+                        <input type="number" id="cnt2v2" value="0" min="0">
+                    </div>
+                    <div class="mode-input-group">
+                        <label for="cnt4v4">4v4 Mode</label>
+                        <input type="number" id="cnt4v4" value="0" min="0">
+                    </div>
+                    <div class="mode-input-group">
+                        <label for="cnt6v6">6v6 Mode</label>
+                        <input type="number" id="cnt6v6" value="0" min="0">
+                    </div>
+                </div>
+                <button class="action-btn" onclick="confirmAndSave()"><i class="fas fa-check-circle"></i> CONFIRM & LAUNCH BOTS</button>
                 <span id="saveStatus" style="margin-left: 10px; font-weight: 600;"></span>
             </div>
         </div>
@@ -1410,6 +1520,8 @@ class BotHandler(BaseHTTPRequestHandler):
     </div>
 
     <script>
+        let currentMode = null; // 'upload' or 'edit'
+
         function fetchBots() {
             fetch('/status')
                 .then(res => res.json())
@@ -1493,9 +1605,11 @@ class BotHandler(BaseHTTPRequestHandler):
         }
 
         function selectOption(option) {
+            currentMode = option;
             document.getElementById('dropdownMenu').classList.remove('show');
             document.getElementById('uploadBox').classList.remove('active');
             document.getElementById('editBox').classList.remove('active');
+            document.getElementById('modeSelectorBox').style.display = 'block';
 
             if (option === 'upload') {
                 document.getElementById('uploadBox').classList.add('active');
@@ -1516,33 +1630,51 @@ class BotHandler(BaseHTTPRequestHandler):
             }
         }
 
-        function uploadJsonFile() {
-            const status = document.getElementById('uploadStatus');
-            if (!selectedFileContent) return alert("Select a JSON file!");
-            try {
-                sendSaveRequest(JSON.parse(selectedFileContent), status);
-            } catch (e) { alert("Invalid JSON File!"); }
-        }
-
         function loadJson() {
             fetch('/get_accs').then(res => res.json()).then(data => {
                 document.getElementById('jsonEditor').value = JSON.stringify(data, null, 4);
             });
         }
 
-        function saveJson() {
-            const editor = document.getElementById('jsonEditor');
+        function confirmAndSave() {
             const status = document.getElementById('saveStatus');
-            try {
-                sendSaveRequest(JSON.parse(editor.value), status);
-            } catch (e) { alert("Invalid JSON format!"); }
+            const c2v2 = parseInt(document.getElementById('cnt2v2').value) || 0;
+            const c4v4 = parseInt(document.getElementById('cnt4v4').value) || 0;
+            const c6v6 = parseInt(document.getElementById('cnt6v6').value) || 0;
+
+            let jsonData = null;
+
+            if (currentMode === 'upload') {
+                if (!selectedFileContent) return alert("Select a JSON file first!");
+                try {
+                    jsonData = JSON.parse(selectedFileContent);
+                } catch (e) { return alert("Invalid JSON File!"); }
+            } else if (currentMode === 'edit') {
+                const editor = document.getElementById('jsonEditor');
+                try {
+                    jsonData = JSON.parse(editor.value);
+                } catch (e) { return alert("Invalid JSON Format!"); }
+            } else {
+                return alert("Please select Upload or Edit from menu!");
+            }
+
+            const payload = {
+                accs: jsonData,
+                modes: {
+                    "2v2": c2v2,
+                    "4v4": c4v4,
+                    "6v6": c6v6
+                }
+            };
+
+            sendSaveRequest(payload, status);
         }
 
-        function sendSaveRequest(data, statusElement) {
+        function sendSaveRequest(payload, statusElement) {
             fetch('/save_accs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
+                body: JSON.stringify(payload)
             })
             .then(res => {
                 if(res.ok) {
@@ -1593,15 +1725,30 @@ class BotHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             
             try:
-                new_data = json.loads(post_data.decode('utf-8'))
+                request_payload = json.loads(post_data.decode('utf-8'))
+                
+                # Handling mode input and json structure
+                if "accs" in request_payload and "modes" in request_payload:
+                    new_accs = request_payload["accs"]
+                    modes = request_payload["modes"]
+                    
+                    with mode_lock:
+                        mode_counts["2v2"] = modes.get("2v2", 0)
+                        mode_counts["4v4"] = modes.get("4v4", 0)
+                        mode_counts["6v6"] = modes.get("6v6", 0)
+                else:
+                    new_accs = request_payload
+                
                 with open("accs.json", "w", encoding="utf-8") as f:
-                    json.dump(new_data, f, indent=4)
+                    json.dump(new_accs, f, indent=4)
+                
+                allocate_modes()
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "success"}).encode('utf-8'))
-                log_terminal("accs.json updated via Web interface. Triggering auto-loader...", "warning")
+                log_terminal("accs.json & Room modes updated. Launching requested bots...", "warning")
             except Exception as e:
                 self.send_response(400)
                 self.end_headers()
