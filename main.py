@@ -491,7 +491,7 @@ class FF_CLient():
                 # রুম ফাংশন লিস্ট (এখন 6v6 সরাসরি ব্যবহার করা হচ্ছে)
                 room_funcs = [Room2v2, Room4v4, Room6v6]
 
-                selected_room_func = random.choices(room_funcs, weights=[3, 4, 3], k=1)[0]
+                selected_room_func = random.choices(room_funcs, weights=[1, 5, 4], k=1)[0]
                 
                 # প্যাকেট জেনারেট ও সেন্ড
                 room_packet = selected_room_func(room_name, key, iv)
