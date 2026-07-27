@@ -412,7 +412,7 @@ class FF_CLient():
                 if self.writer:
                     self.writer.write(packet)
                     await self.writer.drain()
-                    await asyncio.sleep(0.5) 
+                    await asyncio.sleep(0.1) 
             
             log_terminal(f"STORE & MAP SHORTCUTS SENT TO: {target_id}", "success")
             return True
@@ -431,7 +431,7 @@ class FF_CLient():
                 if open_pkt:
                     self.writer.write(open_pkt)
                     await self.writer.drain()
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.1)
 
                 welcome_msg = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
@@ -455,7 +455,7 @@ class FF_CLient():
                     self.writer.write(msg_pkt)
                     await self.writer.drain()
                 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)
                 await self.send_store_shortcut(room_id)
                 
                 log_terminal(f"AUTO WELCOME & STORE BOX SENT TO ROOM: {room_id}", "success")
@@ -478,7 +478,7 @@ class FF_CLient():
                 )
                 log_terminal(f"Game connected successfully", "success")
 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)
 
                 self.writer2.write(bytes.fromhex(tok)) 
                 await self.writer2.drain()
@@ -570,7 +570,7 @@ class FF_CLient():
 
                 self.writer.write(bytes.fromhex(tok)) 
                 await self.writer.drain()  
-                await asyncio.sleep(0.4)     
+                await asyncio.sleep(0.1)     
                 R.set() 
 
                 while True:  
@@ -612,7 +612,7 @@ class FF_CLient():
                                             self.writer.write(txt_pkt)
                                             await self.writer.drain()
                                         
-                                        await asyncio.sleep(0.5)
+                                        await asyncio.sleep(0.1)
 
                                     elif "/app" in msg_text:
                                         log_terminal(f"App link requested by {sender_uid}", "info")
