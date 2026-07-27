@@ -30,7 +30,6 @@ bot_lock = threading.Lock()
 # Dynamic Bot Tracking
 running_bots = set()
 running_bots_lock = threading.Lock()
-json_lock = threading.Lock()
 
 console = Console()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -330,13 +329,10 @@ class FF_CLient():
         self.reader = None 
         self.writer = None          
         try:
-            res = self.Get_FiNal_ToKen_0115(U, P)
-            if not res:
-                # টোকেন পেতে ব্যর্থ হলে JSON থেকে মুছে যাবে
-                remove_invalid_account(self.U)
+            self.Get_FiNal_ToKen_0115(U, P)
         except Exception as e:
-            log_terminal(f"Error initializing client for UID {U}: {e}", "error")
-            remove_invalid_account(self.U)
+            log_terminal(f"Error initializing client for {U}: {e}", "error")
+            update_bot_info(self.U, status="❌ Failed")
 
     async def STarT(self, JwT_ToKen, AutH_ToKen, ip, port, ip2, port2, key, iv, bot_uid):
         update_bot_info(self.U, status="✅ Connected & Online")
@@ -839,28 +835,6 @@ def load_accounts(file_path="accs.json"):
     except Exception as e:
         log_terminal(f"Error loading accounts: {e}", "error")
         return {}
-
-def remove_invalid_account(uid, file_path="accs.json"):
-    """যে অ্যাকাউন্ট চালু হবে না তাকে টার্মিনালে নোটিফাই করে accs.json থেকে রিমুভ করবে"""
-    with json_lock:
-        try:
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                
-                uid_str = str(uid)
-                if uid_str in data:
-                    del data[uid_str]
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        json.dump(data, f, indent=4)
-                    log_terminal(f"❌ Failed to Login: UID [bold yellow]{uid_str}[/bold yellow] -> Automatically Removed from accs.json", "error")
-        except Exception as e:
-            log_terminal(f"Error removing account {uid}: {e}", "error")
-
-    # Clean up tracking status
-    with bot_lock:
-        if uid in bot_status:
-            del bot_status[uid]
 
 # ============ DYNAMIC ACCOUNT LOADER & RUNNER ============
 def dynamic_account_loader():
