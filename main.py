@@ -174,6 +174,21 @@ def GeneRaTePk(Pk, N, K, V):
     else: HeadEr = N + "00"
     return bytes.fromhex(HeadEr + _ + PkEnc)
 
+def Room(room_name, K, V):
+    fields = {
+        1: 2,
+        2: {
+            1: 1, 2: 15, 3: 3, 4: room_name,
+            6: 8, 7: 30, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 36981056,
+            15: [
+                {1: "IDC1", 2: 3000, 3: "BD"},
+                {1: "IDC2", 2: 3000, 3: "BD"}
+            ]
+        }
+    }
+    return GeneRaTePk(CrEaTe_ProTo(fields).hex(), '0e0b', K, V)
+
 def Ua():
     return "Dalvik/2.1.0 (Linux; U; Android 13; SM-S901B Build/TP1A.220624.014)"
 
@@ -468,25 +483,31 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- কালার এবং র‍্যান্ডম রুম (4v4 বেশি নিবে) ---
+                # --- কালার এবং র‍্যান্ডম রুম (4v4 সবথেকে বেশিবার আসবে) ---
                 colors = ["FF0000", "FFFF00", "00FF00", "00FFFF", "FFFFFF"]
                 random_color = random.choice(colors)
                 room_name = f'[C][B][{random_color}]MAHIR'
                 
-                # দ্রষ্টব্য: যদি Room6v6 ফাংশন না থাকে তবে Room4v4 ই ব্যবহার হবে
-                room_funcs = [Room2v2, Room4v4, Room4v4]                 
-                
-                selected_room_func = random.choices(room_funcs, weights=[2, 7, 1], k=1)[0]
+                # রুম ফাংশন লিস্ট (এখন 6v6 সরাসরি ব্যবহার করা হচ্ছে)
+                room_funcs = [Room2v2, Room4v4, Room6v6]
+
+                selected_room_func = random.choices(room_funcs, weights=[2, 6, 2], k=1)[0]
                 
                 # প্যাকেট জেনারেট ও সেন্ড
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
                 
-                # কোন মুড সিলেক্ট হলো তা টার্মিনালে দেখানো
-                mode_name = "4v4" if selected_room_func == Room4v4 else ("2v2" if selected_room_func == Room2v2 else "6v6")
-                log_terminal(f"ROOM NAME CHANGE => {room_name} ({mode_name} Mode)", "success")
-                # -------------------------------------------
+                # টার্মিনাল লগে দেখানোর জন্য মুড নাম বের করা
+                if selected_room_func == Room2v2:
+                    mode_name = "2v2"
+                elif selected_room_func == Room4v4:
+                    mode_name = "4v4"
+                else:
+                    mode_name = "6v6"
+                
+                log_terminal(f"ROOM NAME CHANGE => {room_name} ({mode_name} Mode Selected)", "success")
+                # ------------------------------------------------------
 
                 await asyncio.sleep(0.4)   
 
