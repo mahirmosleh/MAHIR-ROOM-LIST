@@ -449,7 +449,7 @@ class FF_CLient():
                 if open_pkt:
                     self.writer.write(open_pkt)
                     await self.writer.drain()
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.4)
 
                 welcome_msg = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
