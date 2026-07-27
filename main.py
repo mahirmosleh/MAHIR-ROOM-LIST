@@ -509,7 +509,7 @@ class FF_CLient():
                 else:
                     # যদি নির্দিষ্ট মোড সিলেক্ট করা না থাকে তবে ডিফল্ট র‍্যান্ডম
                     room_funcs = [Room2v2, Room4v4, Room6v6]
-                    selected_room_func = random.choices(room_funcs, weights=[1, 5, 4], k=1)[0]
+                    selected_room_func = random.choices(room_funcs, weights=[3, 4, 3], k=1)[0]
                     mode_name = "2v2" if selected_room_func == Room2v2 else ("4v4" if selected_room_func == Room4v4 else "6v6")
 
                 # প্যাকেট জেনারেট ও সেন্ড
