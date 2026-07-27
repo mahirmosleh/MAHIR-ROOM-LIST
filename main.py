@@ -384,7 +384,7 @@ class FF_CLient():
             map1_json = '{"WorkshopCode":"#FREEFIREEFEA38678BAE600F301D25D0D39DD6E64471","type":"UGCMapShare"}'
             map_json = '{"WorkshopCode":"#FREEFIREF63E5AB9D1C9BECFEF06BBF1AD75D3E1K200","type":"UGCMapShare"}'
 
-            for raw_json in [map1_json, map_json]:
+            for raw_json in [map_json]:
                 fields = {
                     1: 1, 
                     2: {
@@ -489,7 +489,7 @@ class FF_CLient():
                 await asyncio.sleep(0.3)
 
                 # --- কালার এবং ডাইনামিক রুম অ্যাসাইনমেন্ট ---
-                colors = ["FF0000", "FFFF00", "00FF00", "00FFFF", "FFFFFF"]
+                colors = ["FF6347", "FFFF00", "00FF00", "00FFFF", "FFFFFF"]
                 random_color = random.choice(colors)
                 room_name = f'[C][B][{random_color}]MAHIR'
                 
@@ -509,7 +509,7 @@ class FF_CLient():
                 else:
                     # যদি নির্দিষ্ট মোড সিলেক্ট করা না থাকে তবে ডিফল্ট র‍্যান্ডম
                     room_funcs = [Room2v2, Room4v4, Room6v6]
-                    selected_room_func = random.choices(room_funcs, weights=[3, 4, 3], k=1)[0]
+                    selected_room_func = random.choices(room_funcs, weights=[4, 3, 3], k=1)[0]
                     mode_name = "2v2" if selected_room_func == Room2v2 else ("4v4" if selected_room_func == Room4v4 else "6v6")
 
                 # প্যাকেট জেনারেট ও সেন্ড
