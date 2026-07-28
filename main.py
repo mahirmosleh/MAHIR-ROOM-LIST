@@ -510,10 +510,10 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 10: # প্রথম ১০টি
+                if pos < 8: # প্রথম ১০টি
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                elif pos < 15: # পরের ৫টি
+                elif pos < 16: # পরের ৫টি
                     selected_room_func = Room4v4
                     mode_name = "4v4"
                 else: # শেষ ৫টি
@@ -521,7 +521,7 @@ class FF_CLient():
                     mode_name = "6v6"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
-                room_name = f'[C][B][{random.choice(colors)}]MAHIR'
+                room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
                 
                 # রুম প্যাকেট পাঠানো
                 room_packet = selected_room_func(room_name, key, iv)
