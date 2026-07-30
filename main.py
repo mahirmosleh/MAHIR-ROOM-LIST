@@ -1677,6 +1677,32 @@ class BotHandler(BaseHTTPRequestHandler):
             }
             self.wfile.write(json.dumps(response_payload).encode('utf-8'))
 
+        elif self.path == '/api/summary': # আমাদের নতুন API
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            total_accs = load_accounts()
+            total_count = len(total_accs)
+            active = 0
+            connecting = 0
+            
+            with bot_lock:
+                for info in bot_status.values():
+                    s = info.get('status', "")
+                    if any(x in s for x in ['✅', 'Connected', 'Online']): active += 1
+                    elif any(x in s for x in ['🔄', 'Connecting', 'Initializing']): connecting += 1
+            
+            running = active + connecting
+            res = {
+                "total": total_count,
+                "running": running,
+                "closed": total_count - running,
+                "online": active,
+                "connecting": connecting
+            }
+            self.wfile.write(json.dumps(res).encode('utf-8'))
+
         elif self.path == '/get_accs':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
