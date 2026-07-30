@@ -463,20 +463,10 @@ class FF_CLient():
 
     async def Auto_Room_Welcome(self, room_id, chat_code, user_uid, user_name="Player"):
         try:
-            # ইউনিক ট্র্যাকিং কি (বট আইডি + রুম আইডি + ইউজার আইডি)
-            tracking_key = f"{self.bot_uid}_{room_id}_{user_uid}"
-            current_time = time.time()
+            # টাইম ট্র্যাকিং বা লিমিট সম্পূর্ণ বাদ দেওয়া হয়েছে
+            # যাতে প্লেয়ার যতবার জয়েন করবে ততবার মেসেজ যায়
             
-            # ট্র্যাকিং চেক: যদি ১ মিনিট (৬০ সেকেন্ড) পার না হয়, তবে রিটার্ন করবে
-            if tracking_key in welcome_tracking:
-                last_time = welcome_tracking[tracking_key]
-                if current_time - last_time < 60:
-                    return
-
-            # ট্র্যাকিং টাইম আপডেট
-            welcome_tracking[tracking_key] = current_time
-
-            # ডাটা আপডেট (ড্যাশবোর্ড এর জন্য)
+            # ডাটা আপডেট (ড্যাশবোর্ডের জন্য)
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time_str)
 
@@ -533,7 +523,7 @@ class FF_CLient():
                 await asyncio.sleep(0.1)
                 await self.send_store_shortcut(room_id)
                 
-                log_terminal(f"WELCOME MESSAGES SENT TO: {user_name} IN ROOM: {room_id}", "success")
+                log_terminal(f"WELCOME SENT TO: {user_name} (EVERYTIME MODE)", "success")
 
         except Exception as e:
             log_terminal(f"Auto Welcome Error: {e}", "error")
@@ -568,7 +558,6 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                # র্যান্ডম বাদ দিয়ে সরাসরি ফাংশন সেট করা হলো
                 if pos < 8: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
                     selected_room_func = Room1v1
                     mode_name = "1v1"
@@ -582,15 +571,12 @@ class FF_CLient():
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
                 
-                # রুম প্যাকেট পাঠানো
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
                 
-                # কোন ফাংশনটি ব্যবহার হয়েছে তা টার্মিনালে দেখাবে
                 func_used = selected_room_func.__name__
                 log_terminal(f"BOT #{my_idx+1} | MODE: {mode_name} | FUNC: {func_used} | ROOM: {room_name}", "success")
-                # ------------------------------------------------------
 
                 await asyncio.sleep(0.4)   
 
@@ -633,16 +619,23 @@ class FF_CLient():
                                     u_uid = user_data.get('2', {}).get('data')
                                     u_name = user_data.get('3', {}).get('data', 'Player')
 
-                                    # জয়েন করলে মেসেজ এবং সাইড চেঞ্জ
+                                    # জয়েন করলে মেসেজ এবং সাইড চেঞ্জ (Side 2, Slot 1)
                                     if r_id and c_code and u_uid:
-                                        # ওয়েলকাম মেসেজ
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
-                                        # সাইড চেঞ্জ (Side 2, Slot 1)
                                         move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
                                         if move_pkt:
                                             self.writer2.write(move_pkt)
                                             await self.writer2.drain()
+
+                                    # --- এই অংশটুকু যোগ করা হয়েছে (কেউ বেরিয়ে গেলে Side 1 এ ফেরার জন্য) ---
+                                    elif cmd_type == 7:
+                                        if r_id:
+                                            back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
+                                            if back_pkt:
+                                                self.writer2.write(back_pkt)
+                                                await self.writer2.drain()
+                                                log_terminal("Player Left. Bot returned to Side 1 Slot 1", "info")
 
                                 except Exception:
                                     pass
