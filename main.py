@@ -264,6 +264,44 @@ async def Mahir_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: byt
         log_terminal(f"Room message error: {e}", "error")
         return None
 
+async def Mahir_Room_Site_Change(room_id, bot_id, side, slot, key, iv):
+    try:
+        fields = {
+            1: 20,
+            2: {
+                1: int(room_id),
+                2: int(bot_id),
+                3: int(side), 
+                4: int(slot), 
+                6: 1
+            }
+        }
+        # আপনার helper ফাংশনগুলো sync, তাই await দরকার নেই
+        proto_bytes = CrEaTe_ProTo(fields)
+        packet_hex = proto_bytes.hex()
+        final_packet = GeneRaTePk(packet_hex, '0e15', key, iv)
+        return final_packet
+    except Exception as e:
+        log_terminal(f"Site Change Error: {e}", "error")
+        return None
+
+async def Mahir_Room_START(room_id, key, iv):
+    try:
+        fields = {
+            1: 11,
+            2: {
+                1: int(room_id),
+                2: 1
+            }
+        }
+        proto_bytes = CrEaTe_ProTo(fields)
+        packet_hex = proto_bytes.hex()
+        final_packet = GeneRaTePk(packet_hex, '0e15', key, iv)
+        return final_packet
+    except Exception as e:
+        log_terminal(f"Room Start Error: {e}", "error")
+        return None
+
 def G_AccEss(U, P):
     UrL = "https://100067.connect.garena.com/oauth/guest/token/grant"
     HE = {
@@ -484,6 +522,7 @@ class FF_CLient():
     async def OnLinE(self, Token, tok, host2, port2, key, iv, bot_uid):
         retry_count = 0
         max_retries = 5
+        self.current_room_id = None # রুম আইডি ট্র্যাকিং এর জন্য
 
         while retry_count < max_retries:  
             try: 
@@ -511,14 +550,14 @@ class FF_CLient():
                 
                 pos = my_idx % 20
                 if pos < 8: # প্রথম ১০টি
+                    selected_room_func = Room1v1
+                    mode_name = "1v1"
+                elif pos < 16: # পরের ৫টি
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                elif pos < 16: # পরের ৫টি
+                else: # শেষ ৫টি
                     selected_room_func = Room4v4
                     mode_name = "4v4"
-                else: # শেষ ৫টি
-                    selected_room_func = Room6v6
-                    mode_name = "6v6"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
@@ -548,40 +587,56 @@ class FF_CLient():
                             if decoded_str:
                                 try:
                                     packet_json = json.loads(decoded_str)
+                                    cmd_type = packet_json.get('4', {}).get('data') # প্যাকেটের টাইপ (৭, ২৫, ৬৫ ইত্যাদি)
                                     f5 = packet_json.get('5', {}).get('data', {})
-                                    
-                                    # ১. রুম ইনফো ও বট ইনফো বের করা (ফিল্ড ২ থেকে)
-                                    room_data = f5.get('2', {}).get('data', {})
-                                    r_id = room_data.get('1', {}).get('data') # Room ID
-                                    # চ্যাট কোড ৩৬, ১০ বা ৪০ এ থাকতে পারে
-                                    c_code = room_data.get('36', {}).get('data') or room_data.get('10', {}).get('data') or room_data.get('40', {}).get('data')
-                                    
-                                    # ২. ইউজার ইনফো বের করা (ফিল্ড ১ থেকে)
-                                    user_data = f5.get('1', {}).get('data', {})
-                                    # যদি ১ এ না থাকে (ইনভাইট প্যাকেটের ক্ষেত্রে), তবে ৯ চেক করবে
-                                    if not isinstance(user_data, dict) or not user_data:
-                                        user_data = f5.get('9', {}).get('data', {}).get('1', {}).get('data', {})
-                                    
-                                    u_uid = user_data.get('2', {}).get('data') # User ID
-                                    u_name = user_data.get('3', {}).get('data', 'Player') # User Name
 
-                                    # ৩. শর্ত সাপেক্ষে ওয়েলকাম মেসেজ ট্রিগার
-                                    # যদি Room ID, Bot UID অথবা User ID-র যেকোনো একটি পরিবর্তন হয়, 
-                                    # তবে welcome_tracking-এ নতুন কি (Key) তৈরি হবে এবং সাথে সাথে মেসেজ যাবে।
-                                    if r_id and c_code and u_uid:
-                                        asyncio.create_task(
-                                            self.Auto_Room_Welcome(
-                                                r_id, 
-                                                c_code, 
-                                                u_uid, 
-                                                user_name=u_name
-                                            )
-                                        )
+                                    # --- ১. রুম ফুল হওয়ার লজিক (Type 65) ---
+                                    if cmd_type == 65:
+                                        is_full = f5.get('1', {}).get('data')
+                                        if is_full == 1 and self.current_room_id:
+                                            log_terminal(f"ROOM FULL DETECTED! STARTING MATCH...", "success")
+                                            start_pkt = await Mahir_Room_START(self.current_room_id, key, iv)
+                                            if start_pkt:
+                                                self.writer2.write(start_pkt)
+                                                await self.writer2.drain()
+
+                                    # --- ২. কেউ জয়েন করলে (Type 25) ---
+                                    elif cmd_type == 25:
+                                        # রুম ডাটা ও চ্যাট কোড বের করা
+                                        r_id = f5.get('1', {}).get('data')
+                                        self.current_room_id = r_id
                                         
-                                        # বান্ডেল চেঞ্জ কমান্ড কল করা
-                                        asyncio.create_task(send_random_bundle(bot_uid=int(bot_uid), key=key, iv=iv, region="BD"))
+                                        user_data = f5.get('2', {}).get('data', {})
+                                        u_uid = user_data.get('1', {}).get('data')
+                                        u_name = user_data.get('3', {}).get('data', 'Player')
+                                        c_code = f5.get('36', {}).get('data') or f5.get('40', {}).get('data')
 
-                                except Exception:
+                                        if r_id and u_uid:
+                                            # বটকে Side 2, Slot 1 এ মুভ করাও
+                                            move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
+                                            if move_pkt:
+                                                self.writer2.write(move_pkt)
+                                                await self.writer2.drain()
+                                            
+                                            # ওয়েলকাম মেসেজ
+                                            asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
+                                            
+                                            # বান্ডেল চেঞ্জ
+                                            asyncio.create_task(send_random_bundle(bot_uid=int(bot_uid), key=key, iv=iv, region="BD"))
+
+                                    # --- ৩. কেউ বেরিয়ে গেলে (Type 7) ---
+                                    elif cmd_type == 7:
+                                        r_id = f5.get('2', {}).get('data', {}).get('1', {}).get('data')
+                                        if r_id:
+                                            # বটকে Side 1, Slot 1 এ মুভ করাও (আগের জায়গায় ফেরত)
+                                            back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
+                                            if back_pkt:
+                                                self.writer2.write(back_pkt)
+                                                await self.writer2.drain()
+                                            log_terminal(f"Player left. Bot returned to Side 1 Slot 1", "info")
+
+                                except Exception as e:
+                                    # print(f"Processing error: {e}")
                                     pass
 
                     except asyncio.TimeoutError:

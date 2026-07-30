@@ -177,6 +177,122 @@ def Send_MsG(msg , owner , K , V):
         14: ""}}
     return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '1215' , K , V)
 
+def Room1v1(room_name, K, V):
+    fields = {
+        1: 2,
+        2: {
+            1: 1,
+            2: 15,
+            3: 0,
+            4: room_name,
+            6: 2,
+            7: 1,
+            8: 1,
+            9: 1,
+            11: 1,
+            12: 2,
+            14: 3030901227,
+            15: {1: "IDC3", 2: 126, 3: "BD"},
+            16: "\u0001\u0003\u0004\u0007\t\n\u000b\u0012\u000f\u000e\u0016\u0019\u001a \u001d",
+            18: 5811212,
+            27: 1,
+            34: "\u0000\u0001",
+            40: "en",
+            48: 1,
+            49: {1: 21},
+            50: {1: 16669277779, 2: 5811212, 5: 2}
+        }
+    }
+    return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '0e0b' , K , V)
+
+def Room2v2(room_name, K, V):
+    fields = {
+        1: 2,
+        2: {
+            1: 1,
+            2: 15,
+            3: 1,
+            4: room_name,
+            6: 4,
+            7: 1,
+            8: 1,
+            9: 1,
+            11: 1,
+            12: 2,
+            14: 3030901227,
+            15: {1: "IDC3", 2: 126, 3: "BD"},
+            16: "\u0001\u0003\u0004\u0007\t\n\u000b\u0012\u000f\u000e\u0016\u0019\u001a \u001d",
+            18: 5811212,
+            27: 1,
+            34: "\u0000\u0001",
+            40: "en",
+            48: 1,
+            49: {1: 21},
+            50: {1: 16669277779, 2: 5811212, 5: 2}
+        }
+    }
+    return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '0e0b' , K , V)
+
+def Room4v4(room_name, K, V):
+    fields = {
+        1: 2,
+        2: {
+            1: 1,
+            2: 15,
+            3: 3,
+            4: room_name,
+            6: 8,
+            7: 1,
+            8: 1,
+            9: 1,
+            11: 1,
+            12: 2,
+            14: 3030901227,
+            15: {1: "IDC3", 2: 126, 3: "BD"},
+            16: "\u0001\u0003\u0004\u0007\t\n\u000b\u0012\u000f\u000e\u0016\u0019\u001a \u001d",
+            18: 5811212,
+            27: 1,
+            34: "\u0000\u0001",
+            40: "en",
+            48: 1,
+            49: {1: 21},
+            50: {1: 16669277779, 2: 5811212, 5: 2}
+        }
+    }
+    return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '0e0b' , K , V)
+
+def nRoom1v1(room_name, K, V):
+    """Create room packet - FIXED VERSION"""
+    fields = {
+        1: 2,
+        2: {
+            1: 1,
+            2: 15,
+            3: 0,
+            4: room_name,
+            6: 2,
+            7: 1,
+            8: 1,
+            9: 1,
+            11: 1,
+            12: 2,
+            14: 96749831,
+            15: [
+                {
+                    1: "IDC1",
+                    2: 3000,
+                    3: "BD"
+                },
+                {
+                    1: "IDC2",
+                    2: 3000,
+                    3: "BD"
+                }
+            ]
+        }
+    }
+    return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '0e0b' , K , V)
+
 def Room2v2(room_name, K, V):
     """Create room packet - FIXED VERSION"""
     fields = {
