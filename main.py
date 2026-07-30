@@ -522,7 +522,7 @@ class FF_CLient():
     async def OnLinE(self, Token, tok, host2, port2, key, iv, bot_uid):
         retry_count = 0
         max_retries = 5
-        self.current_room_id = None # রুম আইডি ট্র্যাকিং এর জন্য
+        self.current_room_id = None 
 
         while retry_count < max_retries:  
             try: 
@@ -549,20 +549,19 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 8: # প্রথম ১০টি
+                if pos < 8: 
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 16: # পরের ৫টি
+                elif pos < 16: 
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                else: # শেষ ৫টি
+                else: 
                     selected_room_func = Room4v4
                     mode_name = "4v4"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
                 
-                # রুম প্যাকেট পাঠানো
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
@@ -574,12 +573,8 @@ class FF_CLient():
 
                 while True:  
                     try:  
-                        self.DaTa = await asyncio.wait_for(
-                            self.reader2.read(9999),
-                            timeout=30
-                        )
-                        if not self.DaTa: 
-                            break
+                        self.DaTa = await asyncio.wait_for(self.reader2.read(9999), timeout=30)
+                        if not self.DaTa: break
                         
                         data_hex = self.DaTa.hex()
                         if data_hex.startswith("0e00"): 
@@ -587,14 +582,14 @@ class FF_CLient():
                             if decoded_str:
                                 try:
                                     packet_json = json.loads(decoded_str)
-                                    cmd_type = packet_json.get('4', {}).get('data') # প্যাকেটের টাইপ (৭, ২৫, ৬৫ ইত্যাদি)
+                                    cmd_type = packet_json.get('4', {}).get('data') 
                                     f5 = packet_json.get('5', {}).get('data', {})
 
                                     # --- ১. রুম ফুল হওয়ার লজিক (Type 65) ---
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
-                                            log_terminal(f"ROOM FULL DETECTED! STARTING MATCH...", "success")
+                                            log_terminal(f"ROOM FULL! STARTING MATCH...", "success")
                                             start_pkt = await Mahir_Room_START(self.current_room_id, key, iv)
                                             if start_pkt:
                                                 self.writer2.write(start_pkt)
@@ -602,26 +597,34 @@ class FF_CLient():
 
                                     # --- ২. কেউ জয়েন করলে (Type 25) ---
                                     elif cmd_type == 25:
-                                        # রুম ডাটা ও চ্যাট কোড বের করা
+                                        # রুম আইডি ও চ্যাট কোড সংগ্রহ
                                         r_id = f5.get('1', {}).get('data')
                                         self.current_room_id = r_id
                                         
-                                        user_data = f5.get('2', {}).get('data', {})
-                                        u_uid = user_data.get('1', {}).get('data')
-                                        u_name = user_data.get('3', {}).get('data', 'Player')
-                                        c_code = f5.get('36', {}).get('data') or f5.get('40', {}).get('data')
+                                        # জয়েন করা প্লেয়ারের ডাটা
+                                        user_block = f5.get('2', {}).get('data', {})
+                                        u_uid = user_block.get('1', {}).get('data')
+                                        u_name = user_block.get('3', {}).get('data', 'Player')
+                                        
+                                        # চ্যাট কোডটি ৩৬, ১০ বা ৪০ যে কোনো ফিল্ডে থাকতে পারে
+                                        c_code = f5.get('36', {}).get('data') or f5.get('10', {}).get('data') or f5.get('40', {}).get('data')
 
-                                        if r_id and u_uid:
-                                            # বটকে Side 2, Slot 1 এ মুভ করাও
+                                        if r_id and u_uid and c_code:
+                                            log_terminal(f"New Join: {u_name} (UID: {u_uid})", "info")
+                                            
+                                            # (A) প্রথমে ওয়েলকাম মেসেজ পাঠানো (Async Task)
+                                            asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
+                                            
+                                            await asyncio.sleep(0.5) # ছোট বিরতি যাতে মেসেজটি আগে যায়
+
+                                            # (B) তারপর বট সাইড পরিবর্তন করবে (Side 2, Slot 1)
                                             move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
                                             if move_pkt:
                                                 self.writer2.write(move_pkt)
                                                 await self.writer2.drain()
+                                                log_terminal(f"Bot moved to Side 2 for Player: {u_name}", "success")
                                             
-                                            # ওয়েলকাম মেসেজ
-                                            asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
-                                            
-                                            # বান্ডেল চেঞ্জ
+                                            # (C) বান্ডেল চেঞ্জ কমান্ড
                                             asyncio.create_task(send_random_bundle(bot_uid=int(bot_uid), key=key, iv=iv, region="BD"))
 
                                     # --- ৩. কেউ বেরিয়ে গেলে (Type 7) ---
@@ -635,8 +638,7 @@ class FF_CLient():
                                                 await self.writer2.drain()
                                             log_terminal(f"Player left. Bot returned to Side 1 Slot 1", "info")
 
-                                except Exception as e:
-                                    # print(f"Processing error: {e}")
+                                except Exception:
                                     pass
 
                     except asyncio.TimeoutError:
@@ -654,7 +656,7 @@ class FF_CLient():
                 retry_count += 1
                 await asyncio.sleep(1)
 
-        log_terminal("Max retries reached for OnLinE, restarting bot process...", "error")
+        log_terminal("Max retries reached, restarting bot...", "error")
         ResTarTinG()
 
     async def ChaT(self, Token, tok, host, port, key, iv, bot_uid, R):
