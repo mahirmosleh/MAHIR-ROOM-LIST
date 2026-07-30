@@ -467,17 +467,16 @@ class FF_CLient():
             tracking_key = f"{self.bot_uid}_{room_id}_{user_uid}"
             current_time = time.time()
             
-            # ট্র্যাকিং চেক: যদি ৩ মিনিট (১৮০ সেকেন্ড) পার না হয়, তবে রিটার্ন করবে
+            # ট্র্যাকিং চেক: যদি ১ মিনিট (৬০ সেকেন্ড) পার না হয়, তবে রিটার্ন করবে
             if tracking_key in welcome_tracking:
                 last_time = welcome_tracking[tracking_key]
-                if current_time - last_time < 1:
-                    # ১ মিনিট পার হয়নি, তাই মেসেজ পাঠাবে না
+                if current_time - last_time < 60:
                     return
 
             # ট্র্যাকিং টাইম আপডেট
             welcome_tracking[tracking_key] = current_time
 
-            # ডাটা আপডেট (ড্যাশবোর্ডের জন্য)
+            # ডাটা আপডেট (ড্যাশবোর্ড এর জন্য)
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time_str)
 
@@ -489,6 +488,7 @@ class FF_CLient():
                     await self.writer.drain()
                     await asyncio.sleep(0.4)
 
+                # --- প্রথম ওয়েলকাম মেসেজ ---
                 welcome_msg = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
@@ -496,15 +496,11 @@ class FF_CLient():
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
                     f"[C][FFD700]────────────────\n"
-                    f"[C][FFFF00] ⚠️ [FF0000]MATCH START NOTICE [FFFF00]⚠️\n"
-                    f"[C][FFFFFF]রুম ফুল না হওয়া পর্যন্ত\n"
-                    f"[C][FFFFFF]ম্যাচ স্টার্ট হবে না।\n"
-                    f"[C][00FF00]WAIT FOR FULL ROOM! ⏳\n"
-                    f"[C][FFD700]────────────────\n"
                     f"[C][FFFF00] Type [00FF00]/store [FFFF00]to view items\n"
                     f"[C][FFFF00] Type [00FF00]/app [FFFF00]for Android App\n"
                     f"[C][FFD700]────────────────\n"
                     f"[C][00BFFF]📢 Telegram : [FFFFFF]@THEMAHIRWORLD\n"
+                    f"[C][FF69B4]🎬 TikTok   : [FFFFFF]@MAHIR__222\n"
                     f"[C][00FF00]🛠️ Follow My Craftland Id\n"
                     f"[C][00FF7F]🛠️ MY UID [FFFF00]1120🙄167🙄200\n"
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖"
@@ -515,10 +511,29 @@ class FF_CLient():
                     self.writer.write(msg_pkt)
                     await self.writer.drain()
                 
+                await asyncio.sleep(0.1) 
+
+                # --- দ্বিতীয় ওয়েলকাম মেসেজ (MATCH START NOTICE) ---
+                welcome_msg_2 = (
+                    f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
+                    f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
+                    f"[C][FFD700]────────────────\n"
+                    f"[C][FFFF00] ⚠️ [FF0000]MATCH START NOTICE [FFFF00]⚠️\n"
+                    f"[C][FFFFFF]রুম ফুল না হওয়া পর্যন্ত\n"
+                    f"[C][FFFFFF]ম্যাচ স্টার্ট হবে না।\n"
+                    f"[C][00FF00]WAIT FOR FULL ROOM! ⏳\n"
+                    f"[C][FFD700]────────────────\n"
+                )
+
+                msg_pkt_2 = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg_2, self.bot_uid, self.key, self.iv)
+                if msg_pkt_2:
+                    self.writer.write(msg_pkt_2)
+                    await self.writer.drain()
+
                 await asyncio.sleep(0.1)
                 await self.send_store_shortcut(room_id)
                 
-                log_terminal(f"WELCOME SENT TO: {user_name} (UID: {user_uid}) IN ROOM: {room_id}", "success")
+                log_terminal(f"WELCOME MESSAGES SENT TO: {user_name} IN ROOM: {room_id}", "success")
 
         except Exception as e:
             log_terminal(f"Auto Welcome Error: {e}", "error")
@@ -544,7 +559,7 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- [বণ্টন ও র্যান্ডমাইজেশন লজিক] ---
+                # --- [বণ্টন নীতি] ---
                 try:
                     all_accs = load_accounts()
                     uid_list = list(all_accs.keys())
@@ -553,14 +568,14 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                # মোড ডিস্ট্রিবিউশন এবং র্যান্ডম ফাংশন সিলেকশন
-                if pos < 8: # প্রথম ১০টি
+                # র্যান্ডম বাদ দিয়ে সরাসরি ফাংশন সেট করা হলো
+                if pos < 8: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 16: # পরের ৫টি
+                elif pos < 16: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                else: # শেষ ৫টি
+                else: # শেষ ৪টি অ্যাকাউন্ট (4v4)
                     selected_room_func = Room4v4
                     mode_name = "4v4"
                 
