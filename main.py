@@ -558,10 +558,10 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 8: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
+                if pos < 10: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 16: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
+                elif pos < 20: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
                     selected_room_func = Room2v2
                     mode_name = "2v2"
                 else: # শেষ ৪টি অ্যাকাউন্ট (4v4)
