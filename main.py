@@ -540,7 +540,7 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- [বণ্টন নীতি] প্রতি ২০টি অ্যাকাউন্টের জন্য ১০:৫:৫ লজিক ---
+                # --- [বণ্টন ও র্যান্ডমাইজেশন লজিক] ---
                 try:
                     all_accs = load_accounts()
                     uid_list = list(all_accs.keys())
@@ -549,24 +549,28 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 8: 
-                    selected_room_func = Room1v1
+                # মোড ডিস্ট্রিবিউশন এবং র্যান্ডম ফাংশন সিলেকশন
+                if pos < 8: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
+                    selected_room_func = random.choice([Room1v1, nRoom1v1])
                     mode_name = "1v1"
-                elif pos < 16: 
-                    selected_room_func = Room2v2
+                elif pos < 16: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
+                    selected_room_func = random.choice([Room2v2, nRoom2v2])
                     mode_name = "2v2"
-                else: 
-                    selected_room_func = Room4v4
+                else: # শেষ ৪টি অ্যাকাউন্ট (4v4)
+                    selected_room_func = random.choice([Room4v4, nRoom4v4])
                     mode_name = "4v4"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
                 
+                # রুম প্যাকেট পাঠানো
                 room_packet = selected_room_func(room_name, key, iv)
                 self.writer2.write(room_packet) 
                 await self.writer2.drain()
                 
-                log_terminal(f"BOT #{my_idx+1} | MODE: {mode_name} | ROOM: {room_name}", "success")
+                # কোন ফাংশনটি ব্যবহার হয়েছে তা টার্মিনালে দেখাবে
+                func_used = selected_room_func.__name__
+                log_terminal(f"BOT #{my_idx+1} | MODE: {mode_name} | FUNC: {func_used} | ROOM: {room_name}", "success")
                 # ------------------------------------------------------
 
                 await asyncio.sleep(0.4)   
@@ -582,10 +586,10 @@ class FF_CLient():
                             if decoded_str:
                                 try:
                                     packet_json = json.loads(decoded_str)
-                                    cmd_type = packet_json.get('4', {}).get('data') 
+                                    cmd_type = packet_json.get('4', {}).get('data')
                                     f5 = packet_json.get('5', {}).get('data', {})
 
-                                    # --- ১. রুম ফুল হওয়ার লজিক (Type 65) ---
+                                    # ১. রুম ফুল হলে স্টার্ট ডিটেক্ট (Type 65)
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
@@ -594,49 +598,32 @@ class FF_CLient():
                                             if start_pkt:
                                                 self.writer2.write(start_pkt)
                                                 await self.writer2.drain()
+                                    
+                                    # রুম আইডি এবং চ্যাট কোড সংগ্রহ
+                                    room_data = f5.get('2', {}).get('data', {})
+                                    r_id = room_data.get('1', {}).get('data')
+                                    if r_id: self.current_room_id = r_id
 
-                                    # --- ২. কেউ জয়েন করলে (Type 25) ---
-                                    elif cmd_type == 25:
-                                        # রুম আইডি ও চ্যাট কোড সংগ্রহ
-                                        r_id = f5.get('1', {}).get('data')
-                                        self.current_room_id = r_id
+                                    c_code = room_data.get('36', {}).get('data') or room_data.get('10', {}).get('data') or room_data.get('40', {}).get('data')
+                                    
+                                    # ইউজার ইনফো সংগ্রহ
+                                    user_data = f5.get('1', {}).get('data', {})
+                                    if not isinstance(user_data, dict) or not user_data:
+                                        user_data = f5.get('9', {}).get('data', {}).get('1', {}).get('data', {})
+                                    
+                                    u_uid = user_data.get('2', {}).get('data')
+                                    u_name = user_data.get('3', {}).get('data', 'Player')
+
+                                    # জয়েন করলে মেসেজ এবং সাইড চেঞ্জ
+                                    if r_id and c_code and u_uid:
+                                        # ওয়েলকাম মেসেজ
+                                        asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
-                                        # জয়েন করা প্লেয়ারের ডাটা
-                                        user_block = f5.get('2', {}).get('data', {})
-                                        u_uid = user_block.get('1', {}).get('data')
-                                        u_name = user_block.get('3', {}).get('data', 'Player')
-                                        
-                                        # চ্যাট কোডটি ৩৬, ১০ বা ৪০ যে কোনো ফিল্ডে থাকতে পারে
-                                        c_code = f5.get('36', {}).get('data') or f5.get('10', {}).get('data') or f5.get('40', {}).get('data')
-
-                                        if r_id and u_uid and c_code:
-                                            log_terminal(f"New Join: {u_name} (UID: {u_uid})", "info")
-                                            
-                                            # (A) প্রথমে ওয়েলকাম মেসেজ পাঠানো (Async Task)
-                                            asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
-                                            
-                                            await asyncio.sleep(0.5) # ছোট বিরতি যাতে মেসেজটি আগে যায়
-
-                                            # (B) তারপর বট সাইড পরিবর্তন করবে (Side 2, Slot 1)
-                                            move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
-                                            if move_pkt:
-                                                self.writer2.write(move_pkt)
-                                                await self.writer2.drain()
-                                                log_terminal(f"Bot moved to Side 2 for Player: {u_name}", "success")
-                                            
-                                            # (C) বান্ডেল চেঞ্জ কমান্ড
-                                            asyncio.create_task(send_random_bundle(bot_uid=int(bot_uid), key=key, iv=iv, region="BD"))
-
-                                    # --- ৩. কেউ বেরিয়ে গেলে (Type 7) ---
-                                    elif cmd_type == 7:
-                                        r_id = f5.get('2', {}).get('data', {}).get('1', {}).get('data')
-                                        if r_id:
-                                            # বটকে Side 1, Slot 1 এ মুভ করাও (আগের জায়গায় ফেরত)
-                                            back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
-                                            if back_pkt:
-                                                self.writer2.write(back_pkt)
-                                                await self.writer2.drain()
-                                            log_terminal(f"Player left. Bot returned to Side 1 Slot 1", "info")
+                                        # সাইড চেঞ্জ (Side 2, Slot 1)
+                                        move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
+                                        if move_pkt:
+                                            self.writer2.write(move_pkt)
+                                            await self.writer2.drain()
 
                                 except Exception:
                                     pass
@@ -646,8 +633,6 @@ class FF_CLient():
                             self.writer2.write(b'\x00')
                             await self.writer2.drain()
                         except: break
-                    except (ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError, BrokenPipeError, OSError):
-                        break 
                     except Exception:
                         break
 
