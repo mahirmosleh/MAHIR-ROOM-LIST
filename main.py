@@ -579,9 +579,6 @@ class FF_CLient():
                 elif pos < 20: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                else: # শেষ ৪টি অ্যাকাউন্ট (4v4)
-                    selected_room_func = Room4v4
-                    mode_name = "4v4"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
@@ -597,8 +594,12 @@ class FF_CLient():
 
                 while True:  
                     try:  
-                        self.DaTa = await asyncio.wait_for(self.reader2.read(9999), timeout=30)
-                        if not self.DaTa: break
+                        self.DaTa = await asyncio.wait_for(
+                            self.reader2.read(9999),
+                            timeout=30
+                        )
+                        if not self.DaTa: 
+                            break
                         
                         data_hex = self.DaTa.hex()
                         if data_hex.startswith("0e00"): 
@@ -606,10 +607,10 @@ class FF_CLient():
                             if decoded_str:
                                 try:
                                     packet_json = json.loads(decoded_str)
-                                    cmd_type = packet_json.get('4', {}).get('data')
+                                    cmd_type = packet_json.get('4', {}).get('data') # কমান্ড টাইপ ডিটেকশন
                                     f5 = packet_json.get('5', {}).get('data', {})
-
-                                    # ১. রুম ফুল হলে স্টার্ট এবং অটো এক্সিট/রুম রিক্রিয়েট
+                                    
+                                    # ১. রুম ফুল হলে স্টার্ট -> ১সে এক্সিট -> ৩সে রিক্রিয়েট
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
@@ -619,28 +620,26 @@ class FF_CLient():
                                                 self.writer2.write(start_pkt)
                                                 await self.writer2.drain()
                                                 
-                                                # ম্যাচ স্টার্টের ১ সেকেন্ড পর রুম থেকে বের হবে
-                                                await asyncio.sleep(1.0)
+                                                await asyncio.sleep(1.0) # ১ সেকেন্ড ওয়েট
                                                 log_terminal("Auto Exiting room...", "warning")
                                                 exit_pkt = await Mahir_Room_ExiT(bot_uid, key, iv)
                                                 if exit_pkt:
                                                     self.writer2.write(exit_pkt)
                                                     await self.writer2.drain()
                                                     
-                                                    # ৩ সেকেন্ড পর আবার নতুন রুম তৈরি করবে
-                                                    await asyncio.sleep(0.1)
+                                                    await asyncio.sleep(0.1) # ৩ সেকেন্ড ওয়েট
                                                     log_terminal("Re-creating room now...", "success")
                                                     self.writer2.write(room_packet)
                                                     await self.writer2.drain()
-                                    
-                                    # রুম আইডি এবং চ্যাট কোড সংগ্রহ
+
+                                    # ২. রুম ইনফো ও বট ইনফো বের করা
                                     room_data = f5.get('2', {}).get('data', {})
                                     r_id = room_data.get('1', {}).get('data')
                                     if r_id: self.current_room_id = r_id
-
+                                    
                                     c_code = room_data.get('36', {}).get('data') or room_data.get('10', {}).get('data') or room_data.get('40', {}).get('data')
                                     
-                                    # ইউজার ইনফো সংগ্রহ
+                                    # ৩. ইউজার ইনফো বের করা
                                     user_data = f5.get('1', {}).get('data', {})
                                     if not isinstance(user_data, dict) or not user_data:
                                         user_data = f5.get('9', {}).get('data', {}).get('1', {}).get('data', {})
@@ -648,24 +647,22 @@ class FF_CLient():
                                     u_uid = user_data.get('2', {}).get('data')
                                     u_name = user_data.get('3', {}).get('data', 'Player')
 
-                                    # জয়েন করলে মেসেজ এবং সাইড চেঞ্জ (Side 2, Slot 1)
+                                    # ৪. কেউ জয়েন করলে (ওয়েলকাম + বান্ডেল + সাইড চেঞ্জ)
                                     if r_id and c_code and u_uid:
+                                        # ওয়েলকাম মেসেজ
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
-                                        # ০.১ সেকেন্ড বিলম্ব
-                                        await asyncio.sleep(0.1) 
-                                        
+                                        await asyncio.sleep(0.1) # স্টাবিলিটির জন্য ছোট বিলম্ব
+                                        # সাইড চেঞ্জ (Side 2, Slot 1)
                                         move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
                                         if move_pkt:
                                             self.writer2.write(move_pkt)
                                             await self.writer2.drain()
 
-                                    # --- কেউ বেরিয়ে গেলে Side 1 এ ফেরার জন্য ---
+                                    # ৫. কেউ বেরিয়ে গেলে (Side 1 এ ফিরে আসা)
                                     elif cmd_type == 7:
                                         if r_id:
-                                            # ০.১ সেকেন্ড বিলম্ব
-                                            await asyncio.sleep(0.1) 
-                                            
+                                            await asyncio.sleep(0.1)
                                             back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
                                             if back_pkt:
                                                 self.writer2.write(back_pkt)
@@ -680,6 +677,8 @@ class FF_CLient():
                             self.writer2.write(b'\x00')
                             await self.writer2.drain()
                         except: break
+                    except (ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError, BrokenPipeError, OSError):
+                        break 
                     except Exception:
                         break
 
