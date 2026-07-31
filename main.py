@@ -302,6 +302,21 @@ async def Mahir_Room_START(room_id, key, iv):
         log_terminal(f"Room Start Error: {e}", "error")
         return None
 
+async def Mahir_Room_ExiT(bot_uid, key, iv):
+    try:
+        fields = {
+            1: 6, 
+            2: {
+                1: int(bot_uid)
+            }
+        }
+        proto_bytes = CrEaTe_ProTo(fields)
+        packet_hex = proto_bytes.hex()
+        return GeneRaTePk(packet_hex, '0e15', key, iv)
+    except Exception as e:
+        log_terminal(f"Exit Packet Error: {e}", "error")
+        return None
+
 def G_AccEss(U, P):
     UrL = "https://100067.connect.garena.com/oauth/guest/token/grant"
     HE = {
@@ -594,7 +609,7 @@ class FF_CLient():
                                     cmd_type = packet_json.get('4', {}).get('data')
                                     f5 = packet_json.get('5', {}).get('data', {})
 
-                                    # ১. রুম ফুল হলে স্টার্ট ডিটেক্ট (Type 65)
+                                    # ১. রুম ফুল হলে স্টার্ট এবং অটো এক্সিট/রুম রিক্রিয়েট
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
@@ -603,6 +618,20 @@ class FF_CLient():
                                             if start_pkt:
                                                 self.writer2.write(start_pkt)
                                                 await self.writer2.drain()
+                                                
+                                                # ম্যাচ স্টার্টের ১ সেকেন্ড পর রুম থেকে বের হবে
+                                                await asyncio.sleep(1.0)
+                                                log_terminal("Auto Exiting room...", "warning")
+                                                exit_pkt = await Mahir_Room_ExiT(bot_uid, key, iv)
+                                                if exit_pkt:
+                                                    self.writer2.write(exit_pkt)
+                                                    await self.writer2.drain()
+                                                    
+                                                    # ৩ সেকেন্ড পর আবার নতুন রুম তৈরি করবে
+                                                    await asyncio.sleep(0.1)
+                                                    log_terminal("Re-creating room now...", "success")
+                                                    self.writer2.write(room_packet)
+                                                    await self.writer2.drain()
                                     
                                     # রুম আইডি এবং চ্যাট কোড সংগ্রহ
                                     room_data = f5.get('2', {}).get('data', {})
@@ -623,14 +652,20 @@ class FF_CLient():
                                     if r_id and c_code and u_uid:
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
+                                        # ০.১ সেকেন্ড বিলম্ব
+                                        await asyncio.sleep(0.1) 
+                                        
                                         move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
                                         if move_pkt:
                                             self.writer2.write(move_pkt)
                                             await self.writer2.drain()
 
-                                    # --- এই অংশটুকু যোগ করা হয়েছে (কেউ বেরিয়ে গেলে Side 1 এ ফেরার জন্য) ---
+                                    # --- কেউ বেরিয়ে গেলে Side 1 এ ফেরার জন্য ---
                                     elif cmd_type == 7:
                                         if r_id:
+                                            # ০.১ সেকেন্ড বিলম্ব
+                                            await asyncio.sleep(0.1) 
+                                            
                                             back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
                                             if back_pkt:
                                                 self.writer2.write(back_pkt)
