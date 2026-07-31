@@ -394,6 +394,7 @@ class FF_CLient():
     def __init__(self, U, P):  
         self.U = str(U)
         self.P = P
+        self.opponent_uid = None 
         update_bot_info(self.U, status="🔄 Initializing...")
         self.empty_count = 0  
         self.reader = None 
@@ -547,6 +548,7 @@ class FF_CLient():
         retry_count = 0
         max_retries = 5
         self.current_room_id = None 
+        self.opponent_uid = None  # বর্তমান লক করা প্লেয়ারের UID রাখার জন্য
 
         while retry_count < max_retries:  
             try: 
@@ -573,10 +575,10 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 10: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
+                if pos < 10: # প্রথম ১০টি অ্যাকাউন্ট (1v1)
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 20: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
+                elif pos < 20: # পরবর্তী ১০টি অ্যাকাউন্ট (2v2)
                     selected_room_func = Room2v2
                     mode_name = "2v2"
                 
@@ -594,12 +596,8 @@ class FF_CLient():
 
                 while True:  
                     try:  
-                        self.DaTa = await asyncio.wait_for(
-                            self.reader2.read(9999),
-                            timeout=30
-                        )
-                        if not self.DaTa: 
-                            break
+                        self.DaTa = await asyncio.wait_for(self.reader2.read(9999), timeout=30)
+                        if not self.DaTa: break
                         
                         data_hex = self.DaTa.hex()
                         if data_hex.startswith("0e00"): 
@@ -607,10 +605,10 @@ class FF_CLient():
                             if decoded_str:
                                 try:
                                     packet_json = json.loads(decoded_str)
-                                    cmd_type = packet_json.get('4', {}).get('data') # কমান্ড টাইপ ডিটেকশন
+                                    cmd_type = packet_json.get('4', {}).get('data')
                                     f5 = packet_json.get('5', {}).get('data', {})
-                                    
-                                    # ১. রুম ফুল হলে স্টার্ট -> ১সে এক্সিট -> ৩সে রিক্রিয়েট
+
+                                    # রুম ফুল হলে স্টার্ট এবং অটো এক্সিট লজিক
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
@@ -620,54 +618,67 @@ class FF_CLient():
                                                 self.writer2.write(start_pkt)
                                                 await self.writer2.drain()
                                                 
-                                                await asyncio.sleep(1.0) # ১ সেকেন্ড ওয়েট
+                                                await asyncio.sleep(1.0)
                                                 log_terminal("Auto Exiting room...", "warning")
                                                 exit_pkt = await Mahir_Room_ExiT(bot_uid, key, iv)
                                                 if exit_pkt:
                                                     self.writer2.write(exit_pkt)
                                                     await self.writer2.drain()
                                                     
-                                                    await asyncio.sleep(0.1) # ৩ সেকেন্ড ওয়েট
+                                                    await asyncio.sleep(0.1)
+                                                    self.opponent_uid = None # ম্যাচ স্টার্ট হলে লক রিসেট
                                                     log_terminal("Re-creating room now...", "success")
                                                     self.writer2.write(room_packet)
                                                     await self.writer2.drain()
-
-                                    # ২. রুম ইনফো ও বট ইনফো বের করা
+                                    
+                                    # রুম আইডি এবং চ্যাট কোড সংগ্রহ
                                     room_data = f5.get('2', {}).get('data', {})
                                     r_id = room_data.get('1', {}).get('data')
                                     if r_id: self.current_room_id = r_id
-                                    
+
                                     c_code = room_data.get('36', {}).get('data') or room_data.get('10', {}).get('data') or room_data.get('40', {}).get('data')
                                     
-                                    # ৩. ইউজার ইনফো বের করা
-                                    user_data = f5.get('1', {}).get('data', {})
-                                    if not isinstance(user_data, dict) or not user_data:
-                                        user_data = f5.get('9', {}).get('data', {}).get('1', {}).get('data', {})
+                                    # ইউজার ইনফো সংগ্রহ
+                                    user_info_raw = f5.get('1', {}).get('data', {})
+                                    if not isinstance(user_info_raw, dict) or not user_info_raw:
+                                        user_info_raw = f5.get('9', {}).get('data', {}).get('1', {}).get('data', {})
                                     
-                                    u_uid = user_data.get('2', {}).get('data')
-                                    u_name = user_data.get('3', {}).get('data', 'Player')
+                                    u_uid = user_info_raw.get('2', {}).get('data')
+                                    u_name = user_info_raw.get('3', {}).get('data', 'Player')
 
-                                    # ৪. কেউ জয়েন করলে (ওয়েলকাম + বান্ডেল + সাইড চেঞ্জ)
+                                    # --- প্লেয়ার জয়েন করলে ---
                                     if r_id and c_code and u_uid:
-                                        # ওয়েলকাম মেসেজ
+                                        # ১. স্বাগতম মেসেজ সবাইকেই দিবে
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
-                                        await asyncio.sleep(0.1) # স্টাবিলিটির জন্য ছোট বিলম্ব
-                                        # সাইড চেঞ্জ (Side 2, Slot 1)
-                                        move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
-                                        if move_pkt:
-                                            self.writer2.write(move_pkt)
-                                            await self.writer2.drain()
-
-                                    # ৫. কেউ বেরিয়ে গেলে (Side 1 এ ফিরে আসা)
-                                    elif cmd_type == 7:
-                                        if r_id:
-                                            await asyncio.sleep(0.1)
-                                            back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
-                                            if back_pkt:
-                                                self.writer2.write(back_pkt)
+                                        # ২. সাইড চেঞ্জ লজিক (শুধুমাত্র প্রথম প্লেয়ারের জন্য লক হবে)
+                                        if self.opponent_uid is None:
+                                            self.opponent_uid = u_uid
+                                            log_terminal(f"Locked with player: {u_name} ({u_uid})", "info")
+                                            
+                                            await asyncio.sleep(0.1) 
+                                            move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
+                                            if move_pkt:
+                                                self.writer2.write(move_pkt)
                                                 await self.writer2.drain()
-                                                log_terminal("Player Left. Bot returned to Side 1 Slot 1", "info")
+                                        else:
+                                            log_terminal(f"Another player {u_name} joined. Bot stays with locked opponent.", "info")
+
+                                    # --- কেউ বেরিয়ে গেলে ---
+                                    elif cmd_type == 7:
+                                        leaving_uid = user_info_raw.get('2', {}).get('data')
+                                        if r_id and leaving_uid:
+                                            # যদি লক করা প্লেয়ারটি বেরিয়ে যায়, তবেই সাইড চেঞ্জ করে ফিরে আসবে
+                                            if leaving_uid == self.opponent_uid:
+                                                log_terminal(f"Locked opponent {leaving_uid} left. Resetting...", "warning")
+                                                self.opponent_uid = None # লক খুলে দেওয়া হলো
+                                                
+                                                await asyncio.sleep(0.1) 
+                                                back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
+                                                if back_pkt:
+                                                    self.writer2.write(back_pkt)
+                                                    await self.writer2.drain()
+                                                    log_terminal("Bot returned to Side 1 Slot 1", "info")
 
                                 except Exception:
                                     pass
@@ -677,8 +688,6 @@ class FF_CLient():
                             self.writer2.write(b'\x00')
                             await self.writer2.drain()
                         except: break
-                    except (ConnectionResetError, ConnectionAbortedError, asyncio.IncompleteReadError, BrokenPipeError, OSError):
-                        break 
                     except Exception:
                         break
 
