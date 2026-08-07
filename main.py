@@ -478,23 +478,26 @@ class FF_CLient():
 
     async def Auto_Room_Welcome(self, room_id, chat_code, user_uid, user_name="Player"):
         try:
+            # টাইম ট্র্যাকিং বা লিমিট সম্পূর্ণ বাদ দেওয়া হয়েছে
+            # যাতে প্লেয়ার যতবার জয়েন করবে ততবার মেসেজ যায়
+            
+            # ডাটা আপডেট (ড্যাশবোর্ডের জন্য)
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time_str)
 
-            # self.writer2 ব্যবহার করুন
-            if hasattr(self, 'writer2') and self.writer2:
+            if self.writer:
                 # রুম চ্যাট ওপেন প্যাকেট
                 open_pkt = await Mahir_OpeN_RoOm_ChaT(room_id, chat_code, self.key, self.iv)
                 if open_pkt:
-                    self.writer2.write(open_pkt)
-                    await self.writer2.drain()
-                    await asyncio.sleep(0.3)
+                    self.writer.write(open_pkt)
+                    await self.writer.drain()
+                    await asyncio.sleep(0.4)
 
                 # --- প্রথম ওয়েলকাম মেসেজ ---
                 welcome_msg = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
-                    f"[C][00FF7F]Wᴇʟᴄᴏᴍᴇ ᴛᴏ Oᴜʀ RᴏᴏM! ✨\n"
+                    f"[C][00FF7F]Wᴇʟᴄᴏᴍᴇ ᴛᴏ Oᴜʀ Rᴏᴏᴍ! ✨\n"
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
                     f"[C][FFD700]────────────────\n"
@@ -510,12 +513,12 @@ class FF_CLient():
                 
                 msg_pkt = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg, self.bot_uid, self.key, self.iv)
                 if msg_pkt:
-                    self.writer2.write(msg_pkt)
-                    await self.writer2.drain()
+                    self.writer.write(msg_pkt)
+                    await self.writer.drain()
                 
-                await asyncio.sleep(0.3) 
+                await asyncio.sleep(0.1) 
 
-                # --- দ্বিতীয় ওয়েলকাম মেসেজ ---
+                # --- দ্বিতীয় ওয়েলকাম মেসেজ (MATCH START NOTICE) ---
                 welcome_msg_2 = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
@@ -529,10 +532,11 @@ class FF_CLient():
 
                 msg_pkt_2 = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg_2, self.bot_uid, self.key, self.iv)
                 if msg_pkt_2:
-                    self.writer2.write(msg_pkt_2)
-                    await self.writer2.drain()
+                    self.writer.write(msg_pkt_2)
+                    await self.writer.drain()
 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.1)
+                await self.send_store_shortcut(room_id)
                 
                 log_terminal(f"WELCOME SENT TO: {user_name} (EVERYTIME MODE)", "success")
 
@@ -594,19 +598,6 @@ class FF_CLient():
 
                 await asyncio.sleep(0.4)   
 
-                # --- [অনলাইন ধরে রাখার জন্য Ping/Heartbeat Task] ---
-                async def keep_alive():
-                    while self.running:
-                        try:
-                            await asyncio.sleep(10)
-                            if hasattr(self, 'writer2') and self.writer2:
-                                self.writer2.write(b'\x00\x00')
-                                await self.writer2.drain()
-                        except:
-                            break
-
-                ping_task = asyncio.create_task(keep_alive())
-
                 while True:  
                     try:  
                         self.DaTa = await asyncio.wait_for(self.reader2.read(9999), timeout=30)
@@ -664,8 +655,8 @@ class FF_CLient():
                                     if r_id and c_code and u_uid:
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
-                                        # ০.৪ সেকেন্ড বিলম্ব (অফলাইন ফিক্স করার জন্য ডিলে বাড়ানো হয়েছে)
-                                        await asyncio.sleep(0.4) 
+                                        # ০.১ সেকেন্ড বিলম্ব
+                                        await asyncio.sleep(0.1) 
                                         
                                         move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
                                         if move_pkt:
@@ -675,8 +666,8 @@ class FF_CLient():
                                     # --- কেউ বেরিয়ে গেলে Side 1 এ ফেরার জন্য ---
                                     elif cmd_type == 7:
                                         if r_id:
-                                            # ০.৩ সেকেন্ড বিলম্ব
-                                            await asyncio.sleep(0.3) 
+                                            # ০.১ সেকেন্ড বিলম্ব
+                                            await asyncio.sleep(0.1) 
                                             
                                             back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
                                             if back_pkt:
@@ -694,9 +685,6 @@ class FF_CLient():
                         except: break
                     except Exception:
                         break
-                
-                # লুপ শেষ হলে ping task ক্যান্সেল হবে
-                ping_task.cancel()
 
             except Exception as e: 
                 log_terminal(f"Game connection retry (Attempt {retry_count+1})...", "warning")
