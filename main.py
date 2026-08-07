@@ -594,6 +594,19 @@ class FF_CLient():
 
                 await asyncio.sleep(0.4)   
 
+                # --- [অনলাইন ধরে রাখার জন্য Ping/Heartbeat Task] ---
+                async def keep_alive():
+                    while self.running:
+                        try:
+                            await asyncio.sleep(10)
+                            if hasattr(self, 'writer2') and self.writer2:
+                                self.writer2.write(b'\x00\x00')
+                                await self.writer2.drain()
+                        except:
+                            break
+
+                ping_task = asyncio.create_task(keep_alive())
+
                 while True:  
                     try:  
                         self.DaTa = await asyncio.wait_for(self.reader2.read(9999), timeout=30)
@@ -651,8 +664,8 @@ class FF_CLient():
                                     if r_id and c_code and u_uid:
                                         asyncio.create_task(self.Auto_Room_Welcome(r_id, c_code, u_uid, user_name=u_name))
                                         
-                                        # ০.১ সেকেন্ড বিলম্ব
-                                        await asyncio.sleep(0.1) 
+                                        # ০.৪ সেকেন্ড বিলম্ব (অফলাইন ফিক্স করার জন্য ডিলে বাড়ানো হয়েছে)
+                                        await asyncio.sleep(0.4) 
                                         
                                         move_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 2, 1, key, iv)
                                         if move_pkt:
@@ -662,8 +675,8 @@ class FF_CLient():
                                     # --- কেউ বেরিয়ে গেলে Side 1 এ ফেরার জন্য ---
                                     elif cmd_type == 7:
                                         if r_id:
-                                            # ০.১ সেকেন্ড বিলম্ব
-                                            await asyncio.sleep(0.1) 
+                                            # ০.৩ সেকেন্ড বিলম্ব
+                                            await asyncio.sleep(0.3) 
                                             
                                             back_pkt = await Mahir_Room_Site_Change(r_id, bot_uid, 1, 1, key, iv)
                                             if back_pkt:
@@ -681,6 +694,9 @@ class FF_CLient():
                         except: break
                     except Exception:
                         break
+                
+                # লুপ শেষ হলে ping task ক্যান্সেল হবে
+                ping_task.cancel()
 
             except Exception as e: 
                 log_terminal(f"Game connection retry (Attempt {retry_count+1})...", "warning")
