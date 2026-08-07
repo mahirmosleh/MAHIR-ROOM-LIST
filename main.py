@@ -478,26 +478,23 @@ class FF_CLient():
 
     async def Auto_Room_Welcome(self, room_id, chat_code, user_uid, user_name="Player"):
         try:
-            # টাইম ট্র্যাকিং বা লিমিট সম্পূর্ণ বাদ দেওয়া হয়েছে
-            # যাতে প্লেয়ার যতবার জয়েন করবে ততবার মেসেজ যায়
-            
-            # ডাটা আপডেট (ড্যাশবোর্ডের জন্য)
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.U, last_room_id=str(room_id), last_active=curr_time_str)
 
-            if self.writer:
+            # self.writer2 ব্যবহার করুন
+            if hasattr(self, 'writer2') and self.writer2:
                 # রুম চ্যাট ওপেন প্যাকেট
                 open_pkt = await Mahir_OpeN_RoOm_ChaT(room_id, chat_code, self.key, self.iv)
                 if open_pkt:
-                    self.writer.write(open_pkt)
-                    await self.writer.drain()
-                    await asyncio.sleep(0.4)
+                    self.writer2.write(open_pkt)
+                    await self.writer2.drain()
+                    await asyncio.sleep(0.3)
 
                 # --- প্রথম ওয়েলকাম মেসেজ ---
                 welcome_msg = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
-                    f"[C][00FF7F]Wᴇʟᴄᴏᴍᴇ ᴛᴏ Oᴜʀ Rᴏᴏᴍ! ✨\n"
+                    f"[C][00FF7F]Wᴇʟᴄᴏᴍᴇ ᴛᴏ Oᴜʀ RᴏᴏM! ✨\n"
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
                     f"[C][FFD700]────────────────\n"
@@ -513,12 +510,12 @@ class FF_CLient():
                 
                 msg_pkt = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg, self.bot_uid, self.key, self.iv)
                 if msg_pkt:
-                    self.writer.write(msg_pkt)
-                    await self.writer.drain()
+                    self.writer2.write(msg_pkt)
+                    await self.writer2.drain()
                 
-                await asyncio.sleep(0.1) 
+                await asyncio.sleep(0.3) 
 
-                # --- দ্বিতীয় ওয়েলকাম মেসেজ (MATCH START NOTICE) ---
+                # --- দ্বিতীয় ওয়েলকাম মেসেজ ---
                 welcome_msg_2 = (
                     f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                     f"[C][B][00FFFF]🔥 MAHIR AUTOMATION BOT 🔥\n"
@@ -532,11 +529,10 @@ class FF_CLient():
 
                 msg_pkt_2 = await Mahir_SEnd_RoOm_MsG(room_id, welcome_msg_2, self.bot_uid, self.key, self.iv)
                 if msg_pkt_2:
-                    self.writer.write(msg_pkt_2)
-                    await self.writer.drain()
+                    self.writer2.write(msg_pkt_2)
+                    await self.writer2.drain()
 
-                await asyncio.sleep(0.1)
-                await self.send_store_shortcut(room_id)
+                await asyncio.sleep(0.3)
                 
                 log_terminal(f"WELCOME SENT TO: {user_name} (EVERYTIME MODE)", "success")
 
@@ -573,15 +569,18 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 10: # প্রথম ৮টি অ্যাকাউন্ট (1v1)
+                if pos < 5:  # প্রথম ৫টি অ্যাকাউন্ট (1v1)
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 20: # পরবর্তী ৮টি অ্যাকাউন্ট (2v2)
+                elif pos < 10:  # পরবর্তী ৫টি অ্যাকাউন্ট (2v2)
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                else: # শেষ ৪টি অ্যাকাউন্ট (4v4)
+                elif pos < 15:  # পরবর্তী ৫টি অ্যাকাউন্ট (4v4)
                     selected_room_func = Room4v4
                     mode_name = "4v4"
+                else:  # শেষ ৫টি অ্যাকাউন্ট (Roomlw)
+                    selected_room_func = Roomlw
+                    mode_name = "Roomlw"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
