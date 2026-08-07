@@ -177,6 +177,36 @@ def Send_MsG(msg , owner , K , V):
         14: ""}}
     return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '1215' , K , V)
 
+def Roomlw(room_name, K, V):
+    fields = {
+        1: 2,
+        2: {
+            1: 11,
+            2: 43,
+            3: 1,
+            4: room_name,
+            6: 4,
+            7: 1,
+            8: 1,
+            9: 1,
+            11: 1,
+            14: 35670272,
+            15: {1: "IDC3", 2: 165, 3: "BD"},
+            16: b"\x01\x07\x09\x0a\x0b\x12\x19\x20\x27\x29",
+            18: 279191872,
+            27: 1,
+            34: b"\x00\x01",
+            40: "en",
+            46: 1033,
+            48: 1,
+            49: {1: 21},
+            50: {1: 35670336, 2: 10757192, 3: 80},
+            51: "a_6534489873065906362",
+            56: 1
+        }
+    }
+    return GeneRaTePk(str(CrEaTe_ProTo(fields).hex()) , '0e0b' , K , V)
+
 def Room1v1(room_name, K, V):
     fields = {
         1: 2,
