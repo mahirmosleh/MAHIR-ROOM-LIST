@@ -573,18 +573,15 @@ class FF_CLient():
                     my_idx = 0
                 
                 pos = my_idx % 20
-                if pos < 5:  # প্রথম ৫টি অ্যাকাউন্ট (1v1)
+                if pos < 10:  # প্রথম ৫টি অ্যাকাউন্ট (1v1)
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 10:  # পরবর্তী ৫টি অ্যাকাউন্ট (2v2)
+                elif pos < 20:  # পরবর্তী ৫টি অ্যাকাউন্ট (2v2)
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                elif pos < 15:  # পরবর্তী ৫টি অ্যাকাউন্ট (4v4)
+                else:  # শেষ ১০টি অ্যাকাউন্ট → 4v4
                     selected_room_func = Room4v4
                     mode_name = "4v4"
-                else:  # শেষ ৫টি অ্যাকাউন্ট (Roomlw)
-                    selected_room_func = Roomlw
-                    mode_name = "Roomlw"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
                 room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
