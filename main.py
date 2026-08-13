@@ -491,7 +491,7 @@ class FF_CLient():
                 if open_pkt:
                     self.writer.write(open_pkt)
                     await self.writer.drain()
-                    await asyncio.sleep(0.4)
+                    await asyncio.sleep(1)
 
                 # --- প্রথম ওয়েলকাম মেসেজ ---
                 welcome_msg = (
@@ -564,7 +564,7 @@ class FF_CLient():
                 await self.writer2.drain()
                 await asyncio.sleep(0.3)
 
-                # --- [বণ্টন নীতি] প্রতি ২০টি অ্যাকাউন্টের জন্য ১০:৫:৫ লজিক ---
+                # --- [বণ্টন নীতি] শুধু 1v1 এবং 2v2 র‍্যান্ডম মোড ---
                 try:
                     all_accs = load_accounts()
                     uid_list = list(all_accs.keys())
@@ -572,19 +572,16 @@ class FF_CLient():
                 except:
                     my_idx = 0
                 
-                pos = my_idx % 20
-                if pos < 10:  # প্রথম ৫টি অ্যাকাউন্ট (1v1)
+                # র‍্যান্ডম ভাবে 1v1 অথবা 2v2 সিলেক্ট করা
+                if random.choice(["1v1", "2v2"]) == "1v1":
                     selected_room_func = Room1v1
                     mode_name = "1v1"
-                elif pos < 20:  # পরবর্তী ৫টি অ্যাকাউন্ট (2v2)
+                else:
                     selected_room_func = Room2v2
                     mode_name = "2v2"
-                else:  # শেষ ১০টি অ্যাকাউন্ট → 4v4
-                    selected_room_func = Room4v4
-                    mode_name = "4v4"
                 
                 colors = ["FF6347", "FFFF00", "008080", "FF00FF", "00FFFF", "FFFFFF"]
-                room_name = f'[C][B][{random.choice(colors)}]ᎷAH!Ꮢ'
+                room_name = f'[B]➥[{random.choice(colors)}]ᎷAH!Ꮢ'
                 
                 # রুম প্যাকেট পাঠানো
                 room_packet = selected_room_func(room_name, key, iv)
