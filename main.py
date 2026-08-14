@@ -676,31 +676,56 @@ class FreeFireBot:
                                                 self.is_in_side2 = False
                                                 console.print(f"[bold cyan][{self.uid}][/bold cyan] [blue]Room empty. Bot back to Side 1.[/blue]")
 
-                                    # --- ৪. রুম ফুল ও স্টার্ট লজিক ---
+                                    # --- ৪. রুম ফুল ও স্টার্ট লজিক (সংশোধিত ও শক্তিশালী) ---
                                     if cmd_type == 65:
-                                        is_full = f5.get('1', {}).get('data')
-                                        if is_full == 1 and self.current_room_id:
-                                            console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold red]Room Full! Starting Match...[/bold red]")
-                                            start_pkt = await Mahir_Room_START(self.current_room_id, self.key, self.iv)
+                                        # রুম ফুল ফ্লাগ চেক (Field 5.1 এ ১ থাকা মানে রুম ফুল)
+                                        is_full_flag = f5.get('1', {}).get('data')
+                                        
+                                        # প্যাকেটে রুম আইডি না থাকলে মেমোরি থেকে আইডি নিবে
+                                        target_rid = r_id or self.current_room_id
+                                        
+                                        if is_full_flag == 1 and target_rid:
+                                            console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold red]!!! ROOM FULL ({target_rid}) !!! Starting Match...[/bold red]")
+                                            
+                                            # ১. ম্যাচ স্টার্ট প্যাকেট পাঠানো
+                                            start_pkt = await Mahir_Room_START(target_rid, self.key, self.iv)
                                             if start_pkt:
                                                 self.online_writer.write(start_pkt)
                                                 await self.online_writer.drain()
-                                                await asyncio.sleep(1.0)
+                                                console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold green]Start Packet Sent.[/bold green]")
+                                                
+                                                # ম্যাচ শুরু হওয়ার জন্য সামান্য বিরতি (অত্যন্ত জরুরি)
+                                                await asyncio.sleep(1.2)
+                                                
+                                                # ২. রুম থেকে বের হওয়ার প্যাকেট পাঠানো
                                                 exit_pkt = await Mahir_Room_ExiT(self.bot_uid, self.key, self.iv)
                                                 if exit_pkt:
                                                     self.online_writer.write(exit_pkt)
                                                     await self.online_writer.drain()
-                                                    await asyncio.sleep(1.0)
+                                                    console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold yellow]Exited from Room.[/bold yellow]")
+                                                    
+                                                    # মেম্বার লিস্ট ও সাইড ট্র্যাকার পরিষ্কার করা
+                                                    self.room_members.clear()
+                                                    self.is_in_side2 = False
+                                                    
+                                                    # ৩. নতুন রুম তৈরির প্যাকেট পাঠানো
+                                                    await asyncio.sleep(0.2)
                                                     self.online_writer.write(room_pkt)
                                                     await self.online_writer.drain()
-                                                    self.is_in_side2 = False 
+                                                    console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold green]New Room Re-created Successfully.[/bold green]")
                                     
-                                except Exception: pass
+                                except Exception as e: 
+                                    # console.print(f"[red]Logic Error: {e}[/red]") # প্রয়োজন হলে এরর দেখতে পারেন
+                                    pass
                         
-                    except asyncio.TimeoutError: continue
-                    except Exception: break
+                    except asyncio.TimeoutError: 
+                        continue
+                    except Exception: 
+                        break
                         
-            except Exception: self.is_online = False
+            except Exception: 
+                self.is_online = False
+            
             await asyncio.sleep(10)
 
     # ---------- TCP CHAT (COMMAND HANDLING) ----------
