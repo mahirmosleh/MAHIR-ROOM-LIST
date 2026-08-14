@@ -1,8 +1,9 @@
 requests
 psutil
-pyjwt
+PyJWT
 protobuf
 protobuf-decoder
-cfonts
+python-cfonts
 rich
 pycryptodome
+aiohttp
