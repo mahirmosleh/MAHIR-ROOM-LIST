@@ -1616,19 +1616,14 @@ class BotHandler(BaseHTTPRequestHandler):
 
 def start_web_server():
     port = 8080
-    max_port = 8099
-    while port <= max_port:
-        try:
-            server = HTTPServer(('0.0.0.0', port), BotHandler)
-            console.print(f"[bold green]🌐 Web Dashboard running at: http://localhost:{port}[/bold green]")
-            webbrowser.open(f'http://localhost:{port}')
-            server.serve_forever()
-            break
-        except OSError:
-            port += 1
-            continue
-    else:
-        console.print("[bold red]Could not find a free port between 8080-8099. Please kill existing processes or change port range.[/bold red]")
+    try:
+        server = HTTPServer(('0.0.0.0', port), BotHandler)
+        console.print(f"[bold green]🌐 Web Dashboard running at: http://localhost:{port}[/bold green]")
+        # অটোমেটিক ব্রাউজার ওপেন হবে
+        webbrowser.open(f'http://localhost:{port}')
+        server.serve_forever()
+    except OSError:
+        console.print(f"[bold red]❌ Error: Port {port} is already in use. Please kill the previous process or free the port.[/bold red]")
 
 # ========== MAIN FUNCTION ==========
 async def main_async():
