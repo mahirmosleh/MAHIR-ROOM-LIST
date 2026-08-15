@@ -466,7 +466,7 @@ def dynamic_account_loader():
                     # প্রতিটি ৫০টি বটের ব্যাচ চালুর পর ১৫ সেকেন্ড বিরতি (যাতে সার্ভার জ্যাম না হয়)
                     if i + batch_size < len(new_uids):
                         console.print("[bold yellow]⏳ Waiting 15s before next batch...[/bold yellow]")
-                        time.sleep(5)
+                        time.sleep(2)
 
         except Exception as e:
             console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
