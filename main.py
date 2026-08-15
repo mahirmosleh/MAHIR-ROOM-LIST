@@ -45,7 +45,7 @@ bot_lock = threading.Lock()
 
 # ========== CONFIG ==========
 login_url, ob, version = "https://loginbp.ggpolarbear.com/", "OB54", "1.126.7"
-TIMEOUT = aiohttp.ClientTimeout(total=15)
+TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # ---------- HELPERS ----------
 def Uaa():
@@ -426,51 +426,9 @@ def dynamic_account_loader():
             console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
         time.sleep(3)
 
-async def run_bot(uid, pwd, index):
-    bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=index)
+async def run_bot(uid, pwd):
+    bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=len(running_bots))
     await bot.keep_online_forever()
-
-def dynamic_account_loader():
-    """৫০টি করে অ্যাকাউন্ট ব্যাচ আকারে লঞ্চ করার লজিক"""
-    batch_size = 100
-    while True:
-        try:
-            accounts = load_accounts()
-            all_uids = list(accounts.keys())
-            new_uids = []
-
-            # চেক করা কোন আইডিগুলো এখনো চালু হয়নি
-            with running_bots_lock:
-                for uid in all_uids:
-                    if uid not in running_bots:
-                        new_uids.append(uid)
-
-            if new_uids:
-                # নতুন আইডিগুলোকে ৫০টি করে ভাগে ভাগ করা
-                for i in range(0, len(new_uids), batch_size):
-                    current_batch = new_uids[i : i + batch_size]
-                    console.print(f"[bold magenta]🚀 Launching Batch { (i//batch_size) + 1} ({len(current_batch)} bots)...[/bold magenta]")
-                    
-                    for uid in current_batch:
-                        pwd = accounts[uid]
-                        with running_bots_lock:
-                            running_bots.add(uid)
-                            idx = len(running_bots)
-                        
-                        # আলাদা থ্রেডে বট চালু করা
-                        threading.Thread(
-                            target=lambda u=uid, p=pwd, index=idx: asyncio.run(run_bot(u, p, index)),
-                            daemon=True
-                        ).start()
-                    
-                    # প্রতিটি ৫০টি বটের ব্যাচ চালুর পর ১৫ সেকেন্ড বিরতি (যাতে সার্ভার জ্যাম না হয়)
-                    if i + batch_size < len(new_uids):
-                        console.print("[bold yellow]⏳ Waiting 15s before next batch...[/bold yellow]")
-                        time.sleep(2)
-
-        except Exception as e:
-            console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
-        time.sleep(1)
 
 
 # ========== BOT CLIENT ==========
@@ -616,7 +574,7 @@ class FreeFireBot:
         return members
 
     def get_room_mode(self):
-        # ইন্ডেক্স অনুযায়ী অর্ধেক ১v১ এবং অর্ধেক ২v২ হবে
+        # জোড় সংখ্যক ইন্ডেক্সের বটগুলো 1v1 এবং বিজোড়গুলো 2v2 খুলবে
         if self.index % 2 == 0:
             return Room1v1, "1v1"
         else:
@@ -746,7 +704,7 @@ class FreeFireBot:
                                         self.room_members.clear()
                                         if self.is_in_side2 and self.current_room_id:
                                             await asyncio.sleep(0.3)
-                                            back_pkt = await Mahir_Room_Site_Change(self.current_room_id, self.bot_uid, 1, 1, self.key, self.iv)
+                                            back_pkt = await Mahir_Room_Site_Change(self.current_room_id, self.bot_uid, 1, 0, self.key, self.iv)
                                             if back_pkt:
                                                 self.online_writer.write(back_pkt)
                                                 await self.online_writer.drain()
