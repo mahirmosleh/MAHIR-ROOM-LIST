@@ -408,27 +408,52 @@ def load_accounts(file_path="accs.json"):
         return {}
 
 # ========== DYNAMIC ACCOUNT LOADER (THREAD BASED) ==========
+
+async def run_bot(uid, pwd, index):
+    bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=index)
+    await bot.keep_online_forever()
+
 def dynamic_account_loader():
-    """Automatically scan accs.json and launch new accounts (thread based)"""
+    """৫০টি করে অ্যাকাউন্ট ব্যাচ আকারে লঞ্চ করার লজিক"""
+    batch_size = 100
     while True:
         try:
             accounts = load_accounts()
+            all_uids = list(accounts.keys())
+            new_uids = []
+
+            # চেক করা কোন আইডিগুলো এখনো চালু হয়নি
             with running_bots_lock:
-                for uid, pwd in accounts.items():
+                for uid in all_uids:
                     if uid not in running_bots:
-                        running_bots.add(uid)
-                        console.print(f"[bold green]✨ New Account Detected! Launching UID: {uid}[/bold green]")
+                        new_uids.append(uid)
+
+            if new_uids:
+                # নতুন আইডিগুলোকে ৫০টি করে ভাগে ভাগ করা
+                for i in range(0, len(new_uids), batch_size):
+                    current_batch = new_uids[i : i + batch_size]
+                    console.print(f"[bold magenta]🚀 Launching Batch { (i//batch_size) + 1} ({len(current_batch)} bots)...[/bold magenta]")
+                    
+                    for uid in current_batch:
+                        pwd = accounts[uid]
+                        with running_bots_lock:
+                            running_bots.add(uid)
+                            idx = len(running_bots)
+                        
+                        # আলাদা থ্রেডে বট চালু করা
                         threading.Thread(
-                            target=lambda u=uid, p=pwd: asyncio.run(run_bot(u, p)),
+                            target=lambda u=uid, p=pwd, index=idx: asyncio.run(run_bot(u, p, index)),
                             daemon=True
                         ).start()
+                    
+                    # প্রতিটি ৫০টি বটের ব্যাচ চালুর পর ১৫ সেকেন্ড বিরতি (যাতে সার্ভার জ্যাম না হয়)
+                    if i + batch_size < len(new_uids):
+                        console.print("[bold yellow]⏳ Waiting 15s before next batch...[/bold yellow]")
+                        time.sleep(10)
+
         except Exception as e:
             console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
-        time.sleep(3)
-
-async def run_bot(uid, pwd):
-    bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=len(running_bots))
-    await bot.keep_online_forever()
+        time.sleep(5)
 
 
 # ========== BOT CLIENT ==========
