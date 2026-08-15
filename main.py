@@ -432,7 +432,7 @@ async def run_bot(uid, pwd, index):
 
 def dynamic_account_loader():
     """৫০টি করে অ্যাকাউন্ট ব্যাচ আকারে লঞ্চ করার লজিক"""
-    batch_size = 50
+    batch_size = 100
     while True:
         try:
             accounts = load_accounts()
