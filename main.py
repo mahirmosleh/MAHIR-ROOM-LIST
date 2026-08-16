@@ -449,13 +449,26 @@ def dynamic_account_loader():
                     # প্রতিটি ৫০টি বটের ব্যাচ চালুর পর ১৫ সেকেন্ড বিরতি (যাতে সার্ভার জ্যাম না হয়)
                     if i + batch_size < len(new_uids):
                         console.print("[bold yellow]⏳ Waiting 15s before next batch...[/bold yellow]")
-                        time.sleep(10)
+                        time.sleep(12)
 
         except Exception as e:
             console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
         time.sleep(5)
 
+def ResTarTinG():
+    """স্ক্রিপ্টটি পুনরায় চালু করার ফাংশন"""
+    console.print("[bold yellow]♻️ Restarting system to clear memory and refresh connections...[/bold yellow]")
+    time.sleep(0.5)
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
 
+def AuTo_ResTartinG():
+    """প্রতি ১ ঘণ্টা পর পর রিস্টার্ট ট্রিগার করবে"""
+    while True:
+        time.sleep(3600)  # ৩৬০০ সেকেন্ড = ১ ঘণ্টা
+        console.print("[bold red]⚠️ Auto restarting process...[/bold red]")
+        ResTarTinG()
+        
 # ========== BOT CLIENT ==========
 class FreeFireBot:
     def __init__(self, uid, password, server='bd', index=0):
@@ -1698,6 +1711,9 @@ def start_web_server():
 async def main_async():
     print(render('MAHIR', colors=['white', 'red'], align='center'))
     
+    # অটো-রিস্টার্ট থ্রেড শুরু
+    threading.Thread(target=AuTo_ResTartinG, daemon=True).start()
+
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     await asyncio.sleep(1)
@@ -1707,8 +1723,8 @@ async def main_async():
     
     console.print(Panel(
         "[bold green]✅ System Active & Running[/bold green]\n"
-        "[cyan]🌐 Dashboard: http://localhost:8080 (or next available)[/cyan]\n"
-        "[yellow]📁 Upload accs.json from Web UI to start bots[/yellow]",
+        "[cyan]🌐 Dashboard: http://localhost:8080[/cyan]\n"
+        "[yellow]🔄 Auto-Restart: Active (Every 1 Hour)[/yellow]",
         title="[bold red]🔥 MAHIR BOT SYSTEM 🔥[/bold red]",
         border_style="bright_red",
         expand=False
