@@ -430,6 +430,64 @@ async def run_bot(uid, pwd, index):
     bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=index)
     await bot.keep_online_forever()
 
+async def try_start_bot_sequential(uid, pwd, index):
+    """একটি নির্দিষ্ট বটের জন্য লগইন করার চেষ্টা করবে (সর্বোচ্চ ২ বার)"""
+    for attempt in range(1, 3):  # ১ এবং ২ নম্বর চেষ্টা
+        console.print(f"[bold yellow]🔄 Attempt {attempt}: Launching UID {uid}...[/bold yellow]")
+        
+        # বট অবজেক্ট তৈরি
+        bot = FreeFireBot(uid=uid, password=pwd, index=index)
+        
+        # লগইন এবং অনলাইন হওয়ার জন্য একটি টাস্ক তৈরি করা
+        bot_task = asyncio.create_task(bot.keep_online_forever())
+        
+        # ১৫-২০ সেকেন্ড অপেক্ষা করা দেখা অনলাইন হয় কি না
+        wait_time = 0
+        while wait_time < 25: 
+            await asyncio.sleep(2)
+            wait_time += 2
+            if bot.is_online:
+                console.print(f"[bold green]✅ UID {uid} is now ONLINE. Moving to next account...[/bold green]")
+                return True # সফল হয়েছে
+        
+        # যদি এই লুপ শেষ হয় তার মানে অনলাইন হয়নি
+        console.print(f"[bold red]⚠️ Attempt {attempt} failed for UID {uid}.[/bold red]")
+        bot.is_running = False # এই চেষ্টা বন্ধ করা
+        bot_task.cancel() # টাস্ক বাতিল করা
+
+    console.print(f"[bold red]❌ UID {uid} failed after 2 attempts. Skipping...[/bold red]")
+    return False # ২ বার চেষ্টায়ও ব্যর্থ
+
+async def sequential_account_loader():
+    """সবগুলো অ্যাকাউন্ট একে একে (One by One) চেক করে রান করাবে"""
+    processed_accounts = set() # যেগুলোর কাজ শেষ হয়েছে (সফল বা ব্যর্থ)
+
+    while True:
+        try:
+            accounts = load_accounts()
+            for index, (uid, pwd) in enumerate(accounts.items()):
+                # যদি অলরেডি রানিং থাকে বা আগে ট্রাই করা হয়ে থাকে তবে স্কিপ
+                if uid in running_bots or uid in processed_accounts:
+                    continue
+                
+                # সিরিয়ালি একটির পর একটি অ্যাকাউন্ট স্টার্ট করার চেষ্টা
+                success = await try_start_bot_sequential(uid, pwd, index)
+                
+                if success:
+                    with running_bots_lock:
+                        running_bots.add(uid)
+                
+                # প্রসেস হয়ে গেলে মার্ক করে রাখা (যাতে বারবার ট্রাই না করে)
+                processed_accounts.add(uid)
+                
+                # পরের অ্যাকাউন্ট ধরার আগে ৩ সেকেন্ড গ্যাপ
+                await asyncio.sleep(0.3)
+
+        except Exception as e:
+            console.print(f"[bold red]Loader Error: {e}[/bold red]")
+        
+        await asyncio.sleep(10) # সবগুলো চেক হয়ে গেলে ১০ সেকেন্ড রেস্ট
+
 def dynamic_account_loader():
     """স্বয়ংক্রিয়ভাবে accs.json ফাইল স্ক্যান করে নতুন অ্যাকাউন্ট রান করাবে"""
     while True:
@@ -1711,20 +1769,21 @@ def start_web_server():
 async def main_async():
     print(render('MAHIR', colors=['white', 'red'], align='center'))
     
-    # অটো-রিস্টার্ট থ্রেড শুরু
+    # অটো-রিস্টার্ট থ্রেড
     threading.Thread(target=AuTo_ResTartinG, daemon=True).start()
 
+    # ওয়েব সার্ভার থ্রেড
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     await asyncio.sleep(1)
 
-    loader_thread = threading.Thread(target=dynamic_account_loader, daemon=True)
-    loader_thread.start()
+    #Loader: এখানে থ্রেডের বদলে সরাসরি asyncio টাস্ক হিসেবে রান করাবো
+    asyncio.create_task(sequential_account_loader())
     
     console.print(Panel(
         "[bold green]✅ System Active & Running[/bold green]\n"
         "[cyan]🌐 Dashboard: http://localhost:8080[/cyan]\n"
-        "[yellow]🔄 Auto-Restart: Active (Every 1 Hour)[/yellow]",
+        "[yellow]🔄 Mode: Sequential (One-by-One Online)[/yellow]",
         title="[bold red]🔥 MAHIR BOT SYSTEM 🔥[/bold red]",
         border_style="bright_red",
         expand=False
