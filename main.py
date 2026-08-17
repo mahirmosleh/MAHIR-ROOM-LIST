@@ -285,61 +285,80 @@ async def GeNeRaTeAccAccess(uid, password):
 
 async def EncRypTMajoRLoGin(open_id, access_token):
     major_login = MajoRLoGinrEq_pb2.MajorLogin()
+    
+    # বর্তমান সময় অনুযায়ী লগইন টাইম
     major_login.event_time = str(datetime.now())[:-7]
     major_login.game_name = "free fire"
-    major_login.platform_id = 2
-    major_login.client_version = "1.126.7"
-    major_login.client_version_code = "2024010012"
-    major_login.system_software = "Android OS 11 / API-30 (RQ3A.210805.001)"
-    major_login.system_hardware = "Handheld"    
-    major_login.device_type = "Handheld"
-    major_login.telecom_operator = "Verizon"
-    major_login.network_type = "WIFI"
-    major_login.screen_width = 1080
-    major_login.screen_height = 2400
-    major_login.screen_dpi = "440"
-    major_login.processor_details = "ARMv8"
-    major_login.memory = 6144
-    major_login.gpu_renderer = "Adreno (TM) 650"
-    major_login.gpu_version = "OpenGL ES 3.2 V@1.50"
-    major_login.graphics_api = "OpenGLES3"
-    major_login.supported_astc_bitset = 16383
-    major_login.unique_device_id = f"Google|{random.randint(10000000,99999999)}-{random.randint(1000,9999)}-{random.randint(1000,9999)}-{random.randint(1000,9999)}-{random.randint(100000000000,999999999999)}"
-    major_login.client_ip = ""
+    
+    # --- ফোন প্ল্যাটফর্ম কনফিগারেশন (Infinix X6812 Style) ---
+    major_login.platform_id = 2             # Android
+    major_login.platform_sdk_id = 2         # Android SDK
+    major_login.device_type = "Handheld"    
+    major_login.system_hardware = "MT6769V/CU" 
+    
+    # আপনার পাঠানো অরিজিনাল সিস্টেম সফটওয়্যার স্ট্রিং
+    major_login.system_software = "Android OS 11 / API-30 (RP1A.200720.011/230921V810)"
+    
+    major_login.client_version = version 
+    major_login.client_version_code = "2019120828" 
+    
+    # --- নেটওয়ার্ক সিমুলেশন (WIFI MODE) ---
+    # এখানে মোবাইল ডাটা "Ooredoo" এবং "4G" সরিয়ে "WIFI" সেট করা হয়েছে
+    major_login.telecom_operator = "WIFI"      # মোবাইল অপারেটরের বদলে ওয়াইফাই
+    major_login.network_operator_a = "00000"   # ওয়াইফাই এর জন্য ফিক্সড কোড
+    major_login.network_type = "WIFI"          # মেইন নেটওয়ার্ক টাইপ
+    major_login.network_type_a = "WIFI"        # সাব নেটওয়ার্ক টাইপ
+    
+    # --- স্ক্রিন রেজোলিউশন (Infinix X6812) ---
+    major_login.screen_width = 750
+    major_login.screen_height = 1708
+    major_login.screen_dpi = "480"
+    
+    # --- হার্ডওয়্যার ডিটেইলস ---
+    major_login.processor_details = "INFINIX MOBILITY LIMITED Infinix X6812"
+    major_login.memory = 4096              
+    major_login.gpu_renderer = "Mali-G52 MC2"
+    major_login.gpu_version = "OpenGL ES 3.2 v1.r26p0-01eac0.f143e3f9482527bbad36b3ec27f93e59"
+    major_login.graphics_api = "OpenGLES2" 
+    
+    # --- ইউনিক ডিভাইস আইডি ---
+    unique_id = str(uuid.uuid4())
+    major_login.unique_device_id = f"Google|{unique_id}" 
+    
     major_login.language = "en"
     major_login.open_id = open_id
     major_login.open_id_type = "4"
-    major_login.memory_available.version = 55
-    major_login.memory_available.hidden_value = 81
-    major_login.access_token = access_token
-    major_login.platform_sdk_id = 2
-    major_login.network_operator_a = "Verizon"
-    major_login.network_type_a = "WIFI"
-    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-    major_login.external_storage_total = random.randint(120000, 130000)
-    major_login.external_storage_available = random.randint(38000, 52000)
-    major_login.internal_storage_total = random.randint(100000, 120000)
-    major_login.internal_storage_available = random.randint(18000, 32000)
-    major_login.game_disk_storage_available = random.randint(18000, 28080)
-    major_login.external_sdcard_avail_storage = random.randint(28080, 60000)
-    major_login.external_sdcard_total_storage = random.randint(110000, 130000)
-    major_login.login_by = 3
-    major_login.library_path = "/data/app/~~random/base.apk"
-    major_login.reg_avatar = 1
-    major_login.library_token = "hash|base.apk"
-    major_login.channel_type = 3
-    major_login.cpu_type = 2
-    major_login.cpu_architecture = "64"
     major_login.login_open_id_type = 4
-    major_login.loading_time = random.randint(9000, 18000)
-    major_login.release_channel = "android"
-    major_login.extra_info = "KqsHTy3KUhvha/qugOBot9Bf7gcwqrf2btWC5rnrKZxrHIxEFfgxmPVkTxN+2dHiSprlxvm2Kl6o8EEgBJy7FzLLpbARlcqc2f/GQz+6UsLSMGXd"
-    major_login.android_engine_init_flag = 110009
-    major_login.if_push = 1
-    major_login.is_vpn = 0
+    major_login.access_token = access_token
+    major_login.login_by = 3
     major_login.origin_platform_type = "4"
     major_login.primary_platform_type = "4"
-    major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWA0FUgsvA1snWlBaO1kFYg=="
+    
+    memory_available = major_login.memory_available
+    memory_available.version = 55
+    memory_available.hidden_value = random.randint(70, 95)
+    
+    # --- স্টোরেজ ডাটা ---
+    major_login.external_storage_total = 64000 
+    major_login.external_storage_available = random.randint(15000, 35000)
+    major_login.internal_storage_total = 64000
+    major_login.internal_storage_available = random.randint(8000, 25000)
+    
+    # --- ফাইল পাথ ও টোকেন (আপনার পাঠানো রিয়েল ডাটা অনুযায়ী) ---
+    major_login.library_path = "/data/app/~~mqMSs-fQy3osXuzWqbcWhA==/com.dts.freefireth-39QqNpcW0WwYLUYNf2HuLQ==/lib/arm64"
+    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~mqMSs-fQy3osXuzWqbcWhA==/com.dts.freefireth-39QqNpcW0WwYLUYNf2HuLQ==/base.apk"
+    
+    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
+    major_login.supported_astc_bitset = 16383
+    major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWAUOUgsvA1snWlBaO1kFYg=="
+    major_login.loading_time = random.randint(3000, 7000) # WIFI তে লোডিং টাইম কম রাখা হয়েছে
+    
+    major_login.release_channel = "android"
+    major_login.if_push = 1
+    major_login.is_vpn = 0
+    major_login.cpu_type = 2
+    major_login.cpu_architecture = "64"
+    major_login.android_engine_init_flag = 110009
     
     string = major_login.SerializeToString()
     key = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
@@ -361,17 +380,15 @@ async def MajorLogin(payload):
         return None
 
 async def GetLoginData(base_url, payload, token):
-    headers = Hr.copy()
-    headers['Authorization'] = f"Bearer {token}"
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
-    try:
-        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
-            async with session.post(f"{base_url}/GetLoginData", data=payload, headers=headers, ssl=ssl_ctx) as resp:
-                return await resp.read() if resp.status==200 else None
-    except Exception:
-        return None
+    url = f"{base_url}/GetLoginData"
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    Hr['Authorization']= f"Bearer {token}"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=payload, headers=Hr, ssl=ssl_context) as response:
+            if response.status == 200: return await response.read()
+            return None
 
 async def xAuThSTarTuP(TarGeT, token, timestamp, key, iv):
     uid_hex = hex(TarGeT)[2:]
@@ -414,46 +431,29 @@ async def run_bot(uid, pwd, index):
     await bot.keep_online_forever()
 
 def dynamic_account_loader():
-    """৫০টি করে অ্যাকাউন্ট ব্যাচ আকারে লঞ্চ করার লজিক"""
-    batch_size = 100
+    """স্বয়ংক্রিয়ভাবে accs.json ফাইল স্ক্যান করে নতুন অ্যাকাউন্ট রান করাবে"""
     while True:
         try:
             accounts = load_accounts()
-            all_uids = list(accounts.keys())
-            new_uids = []
-
-            # চেক করা কোন আইডিগুলো এখনো চালু হয়নি
             with running_bots_lock:
-                for uid in all_uids:
+                for index, (uid, pwd) in enumerate(accounts.items()):
                     if uid not in running_bots:
-                        new_uids.append(uid)
-
-            if new_uids:
-                # নতুন আইডিগুলোকে ৫০টি করে ভাগে ভাগ করা
-                for i in range(0, len(new_uids), batch_size):
-                    current_batch = new_uids[i : i + batch_size]
-                    console.print(f"[bold magenta]🚀 Launching Batch { (i//batch_size) + 1} ({len(current_batch)} bots)...[/bold magenta]")
-                    
-                    for uid in current_batch:
-                        pwd = accounts[uid]
-                        with running_bots_lock:
-                            running_bots.add(uid)
-                            idx = len(running_bots)
+                        running_bots.add(uid)
+                        # log_terminal এর বদলে console.print ব্যবহার করা হয়েছে
+                        console.print(f"[bold green]✨ New Account Detected! Launching Guest UID: {uid}[/bold green]")
                         
-                        # আলাদা থ্রেডে বট চালু করা
-                        threading.Thread(
-                            target=lambda u=uid, p=pwd, index=idx: asyncio.run(run_bot(u, p, index)),
-                            daemon=True
-                        ).start()
-                    
-                    # প্রতিটি ৫০টি বটের ব্যাচ চালুর পর ১৫ সেকেন্ড বিরতি (যাতে সার্ভার জ্যাম না হয়)
-                    if i + batch_size < len(new_uids):
-                        console.print("[bold yellow]⏳ Waiting 15s before next batch...[/bold yellow]")
-                        time.sleep(12)
+                        # এখানে FF_CLient এর বদলে একটি থ্রেড ফাংশন তৈরি করে কল করা হয়েছে
+                        def run_async_bot(u, p, i):
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            bot = FreeFireBot(uid=u, password=p, index=i)
+                            new_loop.run_until_complete(bot.keep_online_forever())
 
+                        t = threading.Thread(target=run_async_bot, args=(uid, pwd, index), daemon=True)
+                        t.start()
         except Exception as e:
             console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
-        time.sleep(5)
+        time.sleep(3)
 
 def ResTarTinG():
     """স্ক্রিপ্টটি পুনরায় চালু করার ফাংশন"""
