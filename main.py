@@ -459,7 +459,7 @@ async def process_single_bot(uid, pwd, index):
 async def batch_account_loader():
     """একসাথে ৫০টি করে অ্যাকাউন্ট প্রসেস করবে"""
     processed_accounts = set()
-    BATCH_SIZE = 50 
+    BATCH_SIZE = 100 
 
     while True:
         try:
@@ -468,7 +468,7 @@ async def batch_account_loader():
                            if uid not in running_bots and uid not in processed_accounts]
 
             if not all_pending:
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
                 continue
 
             for i in range(0, len(all_pending), BATCH_SIZE):
@@ -699,8 +699,14 @@ class FreeFireBot:
                 self.is_online = True
                 update_bot_info(self.uid, status="✅ Online", room_active=True)
                 
+                # --- এখানে পরিবর্তন করা হয়েছে ---
                 selected_color = get_random_color()
-                room_name = f"[B]➥{selected_color}ᎷAH!Ꮢ"
+                name_styles = ["MΔH!R", "MΛH!R", "ᘻᗩᕼᓰᖇ", "ᎷᎪᎻᏆᎡ", "ᎷAH!Ꮢ"]
+                selected_name = random.choice(name_styles)
+                
+                room_name = f"[B]➥{selected_color}{selected_name}"
+                # ------------------------------
+
                 room_func, mode_name = self.get_room_mode()
                 self.room_pkt = room_func(room_name, self.key, self.iv)
                 
