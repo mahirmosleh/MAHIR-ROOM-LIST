@@ -255,6 +255,32 @@ async def Mahir_Room_START(room_id, key, iv):
     except Exception:
         return None
 
+async def MAHIR_WRR_Room_Packet(room_id, key, iv):
+    
+    try:
+        fields = {
+            1: 81,
+            2: {
+                1: int(room_id),
+                2: 1
+            }
+        }
+        
+        # প্রোটোবাফ ডাটা তৈরি
+        proto_data = await CrEaTe_ProTo(fields)
+        
+        # রুম রিলেটেড প্যাকেট সাধারণত 0E15 হেডার ব্যবহার করে
+        packet_type = '0E15' 
+        
+        # এনক্রিপ্টেড প্যাকেট জেনারেট করা
+        final_packet = await GeneRaTePk(proto_data.hex(), packet_type, key, iv)
+        
+        return final_packet
+        
+    except Exception as e:
+        print(f"❌ WRR Packet Error: {e}")
+        return None
+
 async def Mahir_Room_ExiT(bot_uid, key, iv):
     try:
         fields = {
@@ -459,7 +485,7 @@ async def process_single_bot(uid, pwd, index):
 async def batch_account_loader():
     """একসাথে ৫০টি করে অ্যাকাউন্ট প্রসেস করবে"""
     processed_accounts = set()
-    BATCH_SIZE = 100 
+    BATCH_SIZE = 150
 
     while True:
         try:
@@ -613,12 +639,14 @@ class FreeFireBot:
             if not self.chat_writer:
                 return
 
+            # ১. চ্যাট ওপেন করা
             open_pkt = await MAHIR_OpeN_RoOm_ChaT(room_id, chat_code, self.key, self.iv)
             if open_pkt:
                 self.chat_writer.write(open_pkt)
                 await self.chat_writer.drain()
                 await asyncio.sleep(0.4)
 
+            # ২. ওয়েলকাম মেসেজ পাঠানো
             welcome_msg = (
                 f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                 f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
@@ -641,15 +669,24 @@ class FreeFireBot:
                 await self.chat_writer.drain()
             
             await asyncio.sleep(0.3)
+
+            # ৩. 🔥 MAHIR_WRR_Room_Packet কল করা (আপনার রিকোয়েস্ট অনুযায়ী)
+            if self.online_writer:
+                wrr_pkt = await MAHIR_WRR_Room_Packet(room_id, self.key, self.iv)
+                if wrr_pkt:
+                    self.online_writer.write(wrr_pkt)
+                    await self.online_writer.drain()
+                    console.print(f"[bold magenta][{self.uid}][/bold magenta] [bold green]➜ WRR Packet (81) Sent automatically.[/bold green]")
+
+            # ৪. ম্যাপ এবং অন্যান্য শেয়ার পাঠানো
             await self.send_share(room_id, "map")
             await asyncio.sleep(0.2)
-            await self.send_share(room_id, "hud")
             
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.uid, last_room_id=str(room_id), last_active=curr_time_str)
             
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[red]Error in Auto_Room_Welcome: {e}[/red]")
 
     # ---------- ROOM MEMBER EXTRACTION ----------
     def extract_room_members(self, packet_json):
@@ -1791,7 +1828,7 @@ async def main_async():
     console.print(Panel(
         "[bold green]✅ System Active & Running[/bold green]\n"
         "[cyan]🌐 Dashboard: http://localhost:8080[/cyan]\n"
-        "[yellow]🔄 Batch Mode: 50 Accounts Simultaneously[/yellow]",
+        "[yellow]🔄 Batch Mode: 150 Accounts Simultaneously[/yellow]",
         title="[bold red]🔥 MAHIR BOT SYSTEM 🔥[/bold red]",
         border_style="bright_red",
         expand=False
