@@ -295,6 +295,11 @@ async def Mahir_Room_ExiT(bot_uid, key, iv):
     except Exception:
         return None
 
+
+async def GLobaL(T, K, V):
+    fields = {1: 3, 2: {2: 5, 3: f"{T}"}}
+    return await GeneRaTePk((await CrEaTe_ProTo(fields)).hex(), '1215', K, V)
+
 # ---------- LOGIN & AUTH ----------
 async def GeNeRaTeAccAccess(uid, password):
     url = "https://100067.connect.garena.com/oauth/guest/token/grant"
@@ -622,7 +627,15 @@ class FreeFireBot:
             if self.chat_writer:
                 self.chat_writer.write(packet)
                 await self.chat_writer.drain()
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.2)
+
+                # GLobaL এ ২টি Workshop Code পাঠানো
+                for code in ["#FREEFIRE5047CD63A7E2810EF344C6F0A880B17AK200", "#FREEFIREA79043F8AFF0F0D39468FA40C40E21A4K200"]:
+                    g_pkt = await GLobaL(code, self.key, self.iv)
+                    if g_pkt:
+                        self.chat_writer.write(g_pkt)
+                        await self.chat_writer.drain()
+                        await asyncio.sleep(0.2)
             return True
         except Exception:
             return False
