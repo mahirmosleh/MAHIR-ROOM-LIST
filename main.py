@@ -433,6 +433,47 @@ async def xAuThSTarTuP(TarGeT, token, timestamp, key, iv):
     elif uid_length==7: headers = '000000000'
     return f"0115{headers}{uid_hex}{encrypted_timestamp}00000{encrypted_packet_length}{encrypted_packet}"
 
+def create_auth_token_chat(account_id, jwt_token, timestamp, key, iv):
+    """CHAT server auth — packet type 6d19 (18-byte header)"""
+    try:
+        K = bytes.fromhex(key) if isinstance(key, str) else key
+        V = bytes.fromhex(iv)  if isinstance(iv,  str) else iv
+
+        jwt_bytes = jwt_token.encode('utf-8')
+        ct = AES.new(K, AES.MODE_CBC, V).encrypt(pad(jwt_bytes, AES.block_size))
+
+        header = (
+            bytes.fromhex('6d19') +
+            int(account_id).to_bytes(8, 'big') +
+            int(timestamp).to_bytes(4, 'big') +
+            len(ct).to_bytes(4, 'big')
+        )
+        return (header + ct).hex()
+    except Exception as e:
+        print(f"❌ CHAT AUTH ERROR: {e}")
+        return None
+
+
+def create_auth_token_online(account_id, jwt_token, timestamp, key, iv):
+    """ONLINE server auth — packet type 7319 (22-byte header with 4B zeros)"""
+    try:
+        K = bytes.fromhex(key) if isinstance(key, str) else key
+        V = bytes.fromhex(iv)  if isinstance(iv,  str) else iv
+
+        jwt_bytes = jwt_token.encode('utf-8')
+        ct = AES.new(K, AES.MODE_CBC, V).encrypt(pad(jwt_bytes, AES.block_size))
+
+        header = (
+            bytes.fromhex('7319') +
+            int(account_id).to_bytes(8, 'big') +
+            int(timestamp).to_bytes(4, 'big') +
+            b'\x00\x00\x00\x00' +
+            len(ct).to_bytes(4, 'big')
+        )
+        return (header + ct).hex()
+    except Exception as e:
+        print(f"❌ ONLINE AUTH ERROR: {e}")
+        return None
 
 # ========== ACCOUNT LOADER (JSON) ==========
 def load_accounts(file_path="accs.json"):
@@ -1033,23 +1074,40 @@ class FreeFireBot:
                 online_ip, online_port = port_data.Online_IP_Port.split(":")
                 chat_ip, chat_port = port_data.AccountIP_Port.split(":")
                 
-                auth_token = await xAuThSTarTuP(
+                # ★ দুটো আলাদা auth token জেনারেশন (CHAT -> 6d19, ONLINE -> 7319)
+                auth_token_chat = create_auth_token_chat(
                     auth_data.account_uid, 
                     auth_data.token, 
-                    auth_data.timestamp, 
+                    int(auth_data.timestamp), 
                     auth_data.key, 
                     auth_data.iv
                 )
-                
+                auth_token_online = create_auth_token_online(
+                    auth_data.account_uid, 
+                    auth_data.token, 
+                    int(auth_data.timestamp), 
+                    auth_data.key, 
+                    auth_data.iv
+                )
+
+                if not auth_token_chat or not auth_token_online:
+                    console.print("[bold red]❌ Auth token generation failed[/bold red]")
+                    update_bot_info(self.uid, status="❌ Auth Token Error", room_active=False)
+                    await asyncio.sleep(10)
+                    continue
+
                 ready = asyncio.Event()
+                
+                # CHAT (6d19) টাস্ক
                 t1 = asyncio.create_task(
-                    self.tcp_chat(chat_ip, chat_port, auth_token, auth_data.key, auth_data.iv, ready)
+                    self.tcp_chat(chat_ip, chat_port, auth_token_chat, auth_data.key, auth_data.iv, ready)
                 )
                 self.tasks.append(t1)
                 await ready.wait()
                 
+                # ONLINE (7319) টাস্ক
                 t2 = asyncio.create_task(
-                    self.tcp_online(online_ip, online_port, auth_token)
+                    self.tcp_online(online_ip, online_port, auth_token_online)
                 )
                 self.tasks.append(t2)
                 
