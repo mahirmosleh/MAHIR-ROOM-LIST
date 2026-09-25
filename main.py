@@ -44,7 +44,7 @@ bot_status = {}
 bot_lock = threading.Lock()
 
 # ========== CONFIG ==========
-login_url, ob, version = "https://loginbp.ggpolarbear.com/", "OB54", "1.126.7"
+login_url, ob, version = "https://loginbp.ppmainecoonghj.com/", "OB55", "1.132.1"
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # ---------- HELPERS ----------
