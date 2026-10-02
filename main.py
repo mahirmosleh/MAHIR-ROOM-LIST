@@ -12,18 +12,19 @@ import asyncio
 import threading
 import gc
 import re
+import struct
 from datetime import datetime
 from io import BytesIO
 import gzip
 import http.client
 import uuid
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import aiohttp
 import jwt
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
@@ -226,12 +227,11 @@ async def Mahir_Room_Site_Change(room_id, bot_id, side, slot, key, iv):
             2: {
                 1: int(room_id),
                 2: int(bot_id),
-                3: int(side), 
-                4: int(slot), 
+                3: int(side),
+                4: int(slot),
                 6: 1
             }
         }
-        # CrEaTe_ProTo async তাই এখানে await দিতে হবে
         proto_bytes = await CrEaTe_ProTo(fields)
         packet_hex = proto_bytes.hex()
         final_packet = await GeneRaTePk(packet_hex, '0e15', key, iv)
@@ -255,36 +255,10 @@ async def Mahir_Room_START(room_id, key, iv):
     except Exception:
         return None
 
-async def MAHIR_WRR_Room_Packet(room_id, key, iv):
-    
-    try:
-        fields = {
-            1: 81,
-            2: {
-                1: int(room_id),
-                2: 1
-            }
-        }
-        
-        # প্রোটোবাফ ডাটা তৈরি
-        proto_data = await CrEaTe_ProTo(fields)
-        
-        # রুম রিলেটেড প্যাকেট সাধারণত 0E15 হেডার ব্যবহার করে
-        packet_type = '0E15' 
-        
-        # এনক্রিপ্টেড প্যাকেট জেনারেট করা
-        final_packet = await GeneRaTePk(proto_data.hex(), packet_type, key, iv)
-        
-        return final_packet
-        
-    except Exception as e:
-        print(f"❌ WRR Packet Error: {e}")
-        return None
-
 async def Mahir_Room_ExiT(bot_uid, key, iv):
     try:
         fields = {
-            1: 6, 
+            1: 6,
             2: {
                 1: int(bot_uid)
             }
@@ -294,11 +268,6 @@ async def Mahir_Room_ExiT(bot_uid, key, iv):
         return await GeneRaTePk(packet_hex, '0e15', key, iv)
     except Exception:
         return None
-
-
-async def GLobaL(T, K, V):
-    fields = {1: 3, 2: {2: 5, 3: f"{T}"}}
-    return await GeneRaTePk((await CrEaTe_ProTo(fields)).hex(), '1215', K, V)
 
 # ---------- LOGIN & AUTH ----------
 async def GeNeRaTeAccAccess(uid, password):
@@ -314,124 +283,266 @@ async def GeNeRaTeAccAccess(uid, password):
     except Exception:
         return None, None
 
-async def EncRypTMajoRLoGin(open_id, access_token):
-    major_login = MajoRLoGinrEq_pb2.MajorLogin()
-    
-    # বর্তমান সময় অনুযায়ী লগইন টাইম
-    major_login.event_time = str(datetime.now())[:-7]
-    major_login.game_name = "free fire"
-    
-    # --- ফোন প্ল্যাটফর্ম কনফিগারেশন (Infinix X6812 Style) ---
-    major_login.platform_id = 2             # Android
-    major_login.platform_sdk_id = 2         # Android SDK
-    major_login.device_type = "Handheld"    
-    major_login.system_hardware = "MT6769V/CU" 
-    
-    # আপনার পাঠানো অরিজিনাল সিস্টেম সফটওয়্যার স্ট্রিং
-    major_login.system_software = "Android OS 11 / API-30 (RP1A.200720.011/230921V810)"
-    
-    major_login.client_version = version 
-    major_login.client_version_code = "2019120828" 
-    
-    # --- নেটওয়ার্ক সিমুলেশন (WIFI MODE) ---
-    # এখানে মোবাইল ডাটা "Ooredoo" এবং "4G" সরিয়ে "WIFI" সেট করা হয়েছে
-    major_login.telecom_operator = "WIFI"      # মোবাইল অপারেটরের বদলে ওয়াইফাই
-    major_login.network_operator_a = "00000"   # ওয়াইফাই এর জন্য ফিক্সড কোড
-    major_login.network_type = "WIFI"          # মেইন নেটওয়ার্ক টাইপ
-    major_login.network_type_a = "WIFI"        # সাব নেটওয়ার্ক টাইপ
-    
-    # --- স্ক্রিন রেজোলিউশন (Infinix X6812) ---
-    major_login.screen_width = 750
-    major_login.screen_height = 1708
-    major_login.screen_dpi = "480"
-    
-    # --- হার্ডওয়্যার ডিটেইলস ---
-    major_login.processor_details = "INFINIX MOBILITY LIMITED Infinix X6812"
-    major_login.memory = 4096              
-    major_login.gpu_renderer = "Mali-G52 MC2"
-    major_login.gpu_version = "OpenGL ES 3.2 v1.r26p0-01eac0.f143e3f9482527bbad36b3ec27f93e59"
-    major_login.graphics_api = "OpenGLES2" 
-    
-    # --- ইউনিক ডিভাইস আইডি ---
-    unique_id = str(uuid.uuid4())
-    major_login.unique_device_id = f"Google|{unique_id}" 
-    
-    major_login.language = "en"
-    major_login.open_id = open_id
-    major_login.open_id_type = "4"
-    major_login.login_open_id_type = 4
-    major_login.access_token = access_token
-    major_login.login_by = 3
-    major_login.origin_platform_type = "4"
-    major_login.primary_platform_type = "4"
-    
-    memory_available = major_login.memory_available
-    memory_available.version = 55
-    memory_available.hidden_value = random.randint(70, 95)
-    
-    # --- স্টোরেজ ডাটা ---
-    major_login.external_storage_total = 64000 
-    major_login.external_storage_available = random.randint(15000, 35000)
-    major_login.internal_storage_total = 64000
-    major_login.internal_storage_available = random.randint(8000, 25000)
-    
-    # --- ফাইল পাথ ও টোকেন (আপনার পাঠানো রিয়েল ডাটা অনুযায়ী) ---
-    major_login.library_path = "/data/app/~~mqMSs-fQy3osXuzWqbcWhA==/com.dts.freefireth-39QqNpcW0WwYLUYNf2HuLQ==/lib/arm64"
-    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~mqMSs-fQy3osXuzWqbcWhA==/com.dts.freefireth-39QqNpcW0WwYLUYNf2HuLQ==/base.apk"
-    
-    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-    major_login.supported_astc_bitset = 16383
-    major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWAUOUgsvA1snWlBaO1kFYg=="
-    major_login.loading_time = random.randint(3000, 7000) # WIFI তে লোডিং টাইম কম রাখা হয়েছে
-    
-    major_login.release_channel = "android"
-    major_login.if_push = 1
-    major_login.is_vpn = 0
-    major_login.cpu_type = 2
-    major_login.cpu_architecture = "64"
-    major_login.android_engine_init_flag = 110009
-    
-    string = major_login.SerializeToString()
+def encode_varint(value):
+    result = []
+    if value < 0:
+        value &= (1 << 64) - 1
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            byte |= 0x80
+        result.append(byte)
+        if not value:
+            break
+    return bytes(result)
+
+def create_proto(fields):
+    packet = bytearray()
+    for field, value in fields.items():
+        if isinstance(value, dict):
+            nested = create_proto(value)
+            packet.extend(encode_varint((field << 3) | 2))
+            packet.extend(encode_varint(len(nested)))
+            packet.extend(nested)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    nested = create_proto(item)
+                    packet.extend(encode_varint((field << 3) | 2))
+                    packet.extend(encode_varint(len(nested)))
+                    packet.extend(nested)
+        elif isinstance(value, int):
+            packet.extend(encode_varint((field << 3) | 0))
+            packet.extend(encode_varint(value))
+        elif isinstance(value, str):
+            encoded = value.encode('utf-8')
+            packet.extend(encode_varint((field << 3) | 2))
+            packet.extend(encode_varint(len(encoded)))
+            packet.extend(encoded)
+        elif isinstance(value, bytes):
+            packet.extend(encode_varint((field << 3) | 2))
+            packet.extend(encode_varint(len(value)))
+            packet.extend(value)
+    return bytes(packet)
+
+def encrypt_aes(hex_data: str) -> str:
     key = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
-    iv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
+    iv  = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
     cipher = AES.new(key, AES.MODE_CBC, iv)
-    padded_message = pad(string, AES.block_size)
-    encrypted_payload = cipher.encrypt(padded_message)
-    return encrypted_payload
+    return cipher.encrypt(pad(bytes.fromhex(hex_data), AES.block_size)).hex()
+
+
+async def EncRypTMajoRLoGin(open_id: str, access_token: str, version: str) -> bytes:
+    fields = {
+        3: str(datetime.now())[:-7],
+        4: "free fire",
+        5: 1,
+        7: str(version),
+        8: "Android OS 11 / API-30 (RP1A.200720.011/230921V810)",
+        9: "Handheld",
+        10: "Grameenphone",
+        11: "WIFI",
+        12: 1708,
+        13: 750,
+        14: "480",
+        15: "ARM64 FP ASIMD AES | 2000 | 8",
+        16: 5767,
+        17: "Mali-G52 MC2",
+        18: "OpenGL ES 3.2 v1.r26p0-01eac0.f143e3f9482527bbad36b3ec27f93e59",
+        19: "Google|3f10d414-be33-4ac3-b9fc-fcbf47c183b5",
+        20: "103.200.36.134",
+        21: "en",
+        22: str(open_id),
+        23: "4",
+        24: "Handheld",
+        25: "INFINIX MOBILITY LIMITED Infinix X6812",
+        26: "BD",
+        29: str(access_token),
+        30: 1,
+        41: "Grameenphone",
+        42: "WIFI",
+        57: "7428b253defc164018c604a1ebbfebdf",
+        60: 110962,
+        61: 80611,
+        62: 1051,
+        64: 80829,
+        65: 110962,
+        66: 80829,
+        67: 110962,
+        73: 2,
+        74: "/data/app/~~MxBbX9YA6AkFscre_RExgw==/com.dts.freefireth-hLOkTeh1Q46L_oLV4UXQTg==/lib/arm64",
+        76: 1,
+        77: "b8e0cd5e295eee42f5860d3c86e483dd|/data/app/~~MxBbX9YA6AkFscre_RExgw==/com.dts.freefireth-hLOkTeh1Q46L_oLV4UXQTg==/base.apk",
+        78: 3,
+        79: 2,
+        81: "64",
+        83: "2019121229",
+        85: 3,
+        86: "OpenGLES2",
+        87: 4095,
+        88: 4,
+        91: {
+            9: 65
+        },
+        92: 10508,
+        93: "android",
+        94: "KqsHT76RdsVKvnpkirzc2FQs3eu0OZChfZxMTZn+Rjv06Ri2qeOQkyPcdk5JceWKmXhOFFUPuNy9S8esTr37yCT5piY32iUcehVw0bL4F4lzAmyD",
+        95: 111207,
+        96: '{"cur_rate":[60,90],"support_etc2":false}',
+        97: 1,
+        98: 1,
+        99: "4",
+        100: "4",
+        102: "B\\FFP[[\tf",
+        103: 1,
+        104: 28754,
+        105: 1,
+        106: "https://dl.ak.freefiremobile.com/live/ABHotUpdates/|https://core-ak.freefiremobile.com/live/ABHotUpdates/|a4332cb1c1a84e51dd77441e4856ed5a",
+        107: "1.477aa00e98bf924c"
+    }
+
+    proto_bytes = create_proto(fields)
+    encrypted_hex = encrypt_aes(proto_bytes.hex())
+    return bytes.fromhex(encrypted_hex)
 
 async def MajorLogin(payload):
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
-    try:
-        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
-            async with session.post(login_url+"MajorLogin", data=payload, headers=Hr, ssl=ssl_ctx) as resp:
-                return await resp.read() if resp.status==200 else None
-    except Exception:
-        return None
+    global login_url
+    base = login_url.rstrip("/")
+    if not base.startswith(("http://", "https://")):
+        base = "https://" + base
+    url = f"{base}/MajorLogin"
+
+    Hr["X-GA-SV"] = str(int(time.time()))
+    Hr["ReleaseVersion"] = ob
+
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=payload, headers=Hr, ssl=ssl_context) as response:
+            if response.status != 200:
+                print(f"❌ MajorLogin HTTP {response.status}")
+                return None
+
+            raw = await response.read()
+            print(f"✅ MajorLogin ({len(raw)} bytes)")
+
+            # ★★★ Strip 64-byte wrapper header ★★★
+            PROTO_HEADER_SIZE = 64
+            if len(raw) > PROTO_HEADER_SIZE:
+                return raw[PROTO_HEADER_SIZE:]
+            return raw
 
 async def GetLoginData(base_url, payload, token):
     url = f"{base_url}/GetLoginData"
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
-    Hr['Authorization']= f"Bearer {token}"
+    Hr['Authorization'] = f"Bearer {token}"
     async with aiohttp.ClientSession() as session:
         async with session.post(url, data=payload, headers=Hr, ssl=ssl_context) as response:
             if response.status == 200: return await response.read()
             return None
 
-async def xAuThSTarTuP(TarGeT, token, timestamp, key, iv):
-    uid_hex = hex(TarGeT)[2:]
-    uid_length = len(uid_hex)
-    encrypted_timestamp = await DecodE_HeX(timestamp)
-    encrypted_packet = await EnC_PacKeT(token.encode().hex(), key, iv)
-    encrypted_packet_length = hex(len(encrypted_packet)//2)[2:]
-    headers = '0000000'
-    if uid_length==8: headers = '00000000'
-    elif uid_length==10: headers = '000000'
-    elif uid_length==7: headers = '000000000'
-    return f"0115{headers}{uid_hex}{encrypted_timestamp}00000{encrypted_packet_length}{encrypted_packet}"
+async def DecRypTMajoRLoGin(MajoRLoGinResPonsE):
+    """Decrypt MajorLogin response - multiple fallback strategies"""
+
+    class ParsedMajorLogin:
+        def __init__(self, fields):
+            self.account_uid = int(fields.get(1, 0))
+            self.region = str(fields.get(2, ""))
+            self.token = str(fields.get(8, ""))
+            self.url = str(fields.get(10, ""))
+            self.timestamp = int(fields.get(21, 0))
+            raw_key = fields.get(22, b"")
+            if isinstance(raw_key, str):
+                try: self.key = bytes.fromhex(raw_key.replace(" ", ""))
+                except: self.key = raw_key.encode()
+            else:
+                self.key = bytes(raw_key)
+            raw_iv = fields.get(23, b"")
+            if isinstance(raw_iv, str):
+                try: self.iv = bytes.fromhex(raw_iv.replace(" ", ""))
+                except: self.iv = raw_iv.encode()
+            else:
+                self.iv = bytes(raw_iv)
+
+    def _dec_vr(buf, off):
+        res, sh, st = 0, 0, off
+        while True:
+            if off >= len(buf): raise IndexError("Out of bound")
+            b = buf[off]; off += 1
+            res += (b & 0x7F) << sh; sh += 7
+            if b < 0x80: break
+        return res, off - st
+
+    def _dec_proto(buf):
+        off, parts, blen = 0, [], len(buf)
+        try:
+            while off < blen:
+                it, vl = _dec_vr(buf, off); off += vl
+                wt, fn = it & 7, it >> 3
+                if wt == 0: val, vl = _dec_vr(buf, off); off += vl
+                elif wt == 2:
+                    length, vl = _dec_vr(buf, off); off += vl
+                    if off + length > blen: return None
+                    val = buf[off:off + length]; off += length
+                elif wt == 5:
+                    if off + 4 > blen: return None
+                    val = struct.unpack_from("<I", buf, off)[0]; off += 4
+                elif wt == 1:
+                    if off + 8 > blen: return None
+                    val = struct.unpack_from("<Q", buf, off)[0]; off += 8
+                else: return None
+                parts.append((fn, wt, val))
+            return parts
+        except: return None
+
+    def _to_dict(parts):
+        res = {}
+        for fn, wt, v in parts:
+            if wt == 2:
+                try: val = v.decode("utf-8")
+                except: val = v
+            else: val = v
+            res[fn] = val
+        return res
+
+    buf = MajoRLoGinResPonsE
+
+    # Strategy 1: Try AES decrypt
+    try:
+        c = AES.new(b'Yg&tc%DEuh6%Zc^8', AES.MODE_CBC, b'6oyZDr22E3ychjM%')
+        buf = unpad(c.decrypt(buf), AES.block_size)
+    except:
+        buf = MajoRLoGinResPonsE
+
+    # Strategy 2: Try direct parse
+    parsed = _dec_proto(buf)
+    if parsed:
+        d = _to_dict(parsed)
+        if 1 in d or 8 in d or 10 in d:
+            return ParsedMajorLogin(d)
+
+    # Strategy 3: Sliding window parse
+    for o in range(len(buf)):
+        parsed = _dec_proto(buf[o:])
+        if parsed:
+            d = _to_dict(parsed)
+            if 1 in d or 8 in d or 10 in d:
+                return ParsedMajorLogin(d)
+
+    # Strategy 4: Fallback to pb2
+    try:
+        proto = MajoRLoGinrEs_pb2.MajorLoginRes()
+        proto.ParseFromString(MajoRLoGinResPonsE)
+        return proto
+    except:
+        pass
+
+    return ParsedMajorLogin({})
 
 def create_auth_token_chat(account_id, jwt_token, timestamp, key, iv):
     """CHAT server auth — packet type 6d19 (18-byte header)"""
@@ -454,26 +565,39 @@ def create_auth_token_chat(account_id, jwt_token, timestamp, key, iv):
         return None
 
 
-def create_auth_token_online(account_id, jwt_token, timestamp, key, iv):
-    """ONLINE server auth — packet type 7319 (22-byte header with 4B zeros)"""
+def create_auth_token_online(account_uid, token, kts, key, iv):
+    """ONLINE server auth — returns HEX STRING (not tuple)"""
     try:
         K = bytes.fromhex(key) if isinstance(key, str) else key
         V = bytes.fromhex(iv)  if isinstance(iv,  str) else iv
 
-        jwt_bytes = jwt_token.encode('utf-8')
-        ct = AES.new(K, AES.MODE_CBC, V).encrypt(pad(jwt_bytes, AES.block_size))
+        token_bytes = token.encode("utf-8")
+        cipher = AES.new(K, AES.MODE_CBC, V)
+        enc_token = cipher.encrypt(pad(token_bytes, 16))
 
-        header = (
-            bytes.fromhex('7319') +
-            int(account_id).to_bytes(8, 'big') +
-            int(timestamp).to_bytes(4, 'big') +
-            b'\x00\x00\x00\x00' +
-            len(ct).to_bytes(4, 'big')
-        )
-        return (header + ct).hex()
+        opcode   = bytes.fromhex("830c")
+        uid_bytes = int(account_uid).to_bytes(8, byteorder="big")
+        kts_bytes = int(kts).to_bytes(4, byteorder="big")
+        len_bytes = len(enc_token).to_bytes(8, byteorder="big")
+
+        full_packet = opcode + uid_bytes + kts_bytes + len_bytes + enc_token
+        return full_packet.hex()
     except Exception as e:
         print(f"❌ ONLINE AUTH ERROR: {e}")
         return None
+
+async def xAuThSTarTuP(TarGeT, token, timestamp, key, iv):
+    uid_hex = hex(TarGeT)[2:]
+    uid_length = len(uid_hex)
+    encrypted_timestamp = await DecodE_HeX(timestamp)
+    encrypted_packet = await EnC_PacKeT(token.encode().hex(), key, iv)
+    encrypted_packet_length = hex(len(encrypted_packet)//2)[2:]
+    headers = '0000000'
+    if uid_length==8: headers = '00000000'
+    elif uid_length==10: headers = '000000'
+    elif uid_length==7: headers = '000000000'
+    return f"0115{headers}{uid_hex}{encrypted_timestamp}00000{encrypted_packet_length}{encrypted_packet}"
+
 
 # ========== ACCOUNT LOADER (JSON) ==========
 def load_accounts(file_path="accs.json"):
@@ -505,71 +629,72 @@ async def run_bot(uid, pwd, index):
 async def process_single_bot(uid, pwd, index):
     """একটি নির্দিষ্ট বটের জন্য সর্বোচ্চ ২ বার চেষ্টা করবে"""
     for attempt in range(1, 3):
-        # একটি নতুন বট অবজেক্ট তৈরি
         bot = FreeFireBot(uid=uid, password=pwd, index=index)
         bot_task = asyncio.create_task(bot.keep_online_forever())
-        
-        # অনলাইন হওয়ার জন্য পর্যাপ্ত সময় অপেক্ষা (৩০ সেকেন্ড)
-        wait_time = 0
-        while wait_time < 30: # ৩০ সেকেন্ড পর্যন্ত অপেক্ষা করবে
-            await asyncio.sleep(0.1) # প্রতি ১ সেকেন্ড পর পর চেক করবে
-            wait_time += 1
-            if bot.is_online:
-                console.print(f"[bold green]✅ [Attempt {attempt}] UID {uid} is ONLINE.[/bold green]")
-                with running_bots_lock:
-                    running_bots.add(uid)
-                return True 
 
-        # ৩০ সেকেন্ডে না হলে টাস্ক বন্ধ করে দিবে
+        wait_time = 0
+        while wait_time < 20:
+            await asyncio.sleep(0.5)
+            wait_time += 0.5
+            if bot.is_online:
+                console.print(
+                    f"[bold green]✅ [Attempt {attempt}] UID {uid} is ONLINE.[/bold green]"
+                )
+                return True
+
         bot.is_running = False
         bot_task.cancel()
-        await asyncio.sleep(0.1) 
+        await asyncio.sleep(0.2)
 
     console.print(f"[bold red]🚫 Skipping UID {uid} (Failed 2 attempts).[/bold red]")
     return False
 
 async def batch_account_loader():
-    """একসাথে ৫০টি করে অ্যাকাউন্ট প্রসেস করবে"""
-    processed_accounts = set()
-    BATCH_SIZE = 150
+    """
+    Real-time account loader:
+    accs.json এ নতুন account যোগ হলে সাথে সাথে চালু করবে।
+    """
+    launched_accounts = set()
+    active_tasks = {}
 
     while True:
         try:
             accounts = load_accounts()
-            all_pending = [(uid, pwd) for uid, pwd in accounts.items() 
-                           if uid not in running_bots and uid not in processed_accounts]
 
-            if not all_pending:
-                await asyncio.sleep(1)
-                continue
+            new_accounts = [
+                (uid, pwd) for uid, pwd in accounts.items()
+                if uid not in launched_accounts
+            ]
 
-            for i in range(0, len(all_pending), BATCH_SIZE):
-                current_batch = all_pending[i : i + BATCH_SIZE]
-                console.print(f"[bold magenta]🚀 Launching Batch: {len(current_batch)} Accounts...[/bold magenta]")
-                
-                tasks = []
-                for index, (uid, pwd) in enumerate(current_batch):
-                    # ৫০টি আইডি একসাথে স্টার্ট হবে
-                    tasks.append(process_single_bot(uid, pwd, i + index))
-                    # আইডিগুলো ছাড়ার মাঝে সামান্য গ্যাপ (০.২ সেকেন্ড) যাতে ক্রাশ না করে
-                    await asyncio.sleep(0.2) 
-                
-                # ৫০টি টাস্কের রেজাল্ট আসা পর্যন্ত অপেক্ষা করবে
-                await asyncio.gather(*tasks)
-                
-                for uid, _ in current_batch:
-                    processed_accounts.add(uid)
-                
-                console.print(f"[bold blue]📦 Batch finished. Moving to next...[/bold blue]")
-                await asyncio.sleep(0.1) # ব্যাচ শেষে সামান্য রেস্ট
+            for uid, pwd in new_accounts:
+                if uid in launched_accounts:
+                    continue
+
+                launched_accounts.add(uid)
+                with running_bots_lock:
+                    running_bots.add(uid)
+
+                console.print(
+                    f"[bold green]✨ New Account Detected → UID {uid} → Launching immediately...[/bold green]"
+                )
+
+                task = asyncio.create_task(
+                    process_single_bot(uid, pwd, len(launched_accounts))
+                )
+                active_tasks[uid] = task
+
+                await asyncio.sleep(0.15)
+
+            for uid in list(active_tasks.keys()):
+                if active_tasks[uid].done():
+                    del active_tasks[uid]
 
         except Exception as e:
-            console.print(f"[bold red]Batch Loader Error: {e}[/bold red]")
-        
-        await asyncio.sleep(0.1)
+            console.print(f"[bold red]Account Loader Error: {e}[/bold red]")
+
+        await asyncio.sleep(1)
 
 def dynamic_account_loader():
-    """স্বয়ংক্রিয়ভাবে accs.json ফাইল স্ক্যান করে নতুন অ্যাকাউন্ট রান করাবে"""
     while True:
         try:
             accounts = load_accounts()
@@ -577,10 +702,8 @@ def dynamic_account_loader():
                 for index, (uid, pwd) in enumerate(accounts.items()):
                     if uid not in running_bots:
                         running_bots.add(uid)
-                        # log_terminal এর বদলে console.print ব্যবহার করা হয়েছে
                         console.print(f"[bold green]✨ New Account Detected! Launching Guest UID: {uid}[/bold green]")
-                        
-                        # এখানে FF_CLient এর বদলে একটি থ্রেড ফাংশন তৈরি করে কল করা হয়েছে
+
                         def run_async_bot(u, p, i):
                             new_loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(new_loop)
@@ -594,19 +717,17 @@ def dynamic_account_loader():
         time.sleep(3)
 
 def ResTarTinG():
-    """স্ক্রিপ্টটি পুনরায় চালু করার ফাংশন"""
     console.print("[bold yellow]♻️ Restarting system to clear memory and refresh connections...[/bold yellow]")
     time.sleep(0.5)
     python = sys.executable
     os.execl(python, python, *sys.argv)
 
 def AuTo_ResTartinG():
-    """প্রতি ১ ঘণ্টা পর পর রিস্টার্ট ট্রিগার করবে"""
     while True:
-        time.sleep(3600)  # ৩৬০০ সেকেন্ড = ১ ঘণ্টা
+        time.sleep(3600)
         console.print("[bold red]⚠️ Auto restarting process...[/bold red]")
         ResTarTinG()
-        
+
 # ========== BOT CLIENT ==========
 class FreeFireBot:
     def __init__(self, uid, password, server='bd', index=0):
@@ -629,7 +750,7 @@ class FreeFireBot:
         self.room_created = False
         self.room_members = set()
         self.room_members_names = {}
-        
+
         update_bot_info(self.uid, status="🔄 Initializing...", room_active=False)
 
     # ---------- SHARE METHODS ----------
@@ -637,19 +758,19 @@ class FreeFireBot:
         try:
             if share_type == "map":
                 share_json = '{"WorkshopCode":"#FREEFIREF63E5AB9D1C9BECFEF06BBF1AD75D3E1K200","type":"UGCMapShare"}'
-            
+
             fields = {
-                1: 1, 
+                1: 1,
                 2: {
                     1: int(self.bot_uid),
                     2: int(target_id),
-                    3: 3, 
+                    3: 3,
                     5: int(time.time()),
                     7: 1,
-                    8: share_json, 
-                    9: { 
-                        1: "[B][C][00FFFF]ᎷAH!Ꮢ ᏰOᎿ SYSTEM", 
-                        2: xBunnEr(), 
+                    8: share_json,
+                    9: {
+                        1: "[B][C][00FFFF]ᎷAH!Ꮢ ᏰOᎿ SYSTEM",
+                        2: xBunnEr(),
                         4: 330,
                         5: 801046518,
                         8: "ᎷAH!Ꮢ TEAM",
@@ -668,15 +789,7 @@ class FreeFireBot:
             if self.chat_writer:
                 self.chat_writer.write(packet)
                 await self.chat_writer.drain()
-                await asyncio.sleep(0.2)
-
-                # GLobaL এ ২টি Workshop Code পাঠানো
-                for code in ["#FREEFIRE5047CD63A7E2810EF344C6F0A880B17AK200", "#FREEFIREA79043F8AFF0F0D39468FA40C40E21A4K200"]:
-                    g_pkt = await GLobaL(code, self.key, self.iv)
-                    if g_pkt:
-                        self.chat_writer.write(g_pkt)
-                        await self.chat_writer.drain()
-                        await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)
             return True
         except Exception:
             return False
@@ -693,14 +806,12 @@ class FreeFireBot:
             if not self.chat_writer:
                 return
 
-            # ১. চ্যাট ওপেন করা
             open_pkt = await MAHIR_OpeN_RoOm_ChaT(room_id, chat_code, self.key, self.iv)
             if open_pkt:
                 self.chat_writer.write(open_pkt)
                 await self.chat_writer.drain()
                 await asyncio.sleep(0.4)
 
-            # ২. ওয়েলকাম মেসেজ পাঠানো
             welcome_msg = (
                 f"[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
                 f"[C][FFFFFF]Hᴇʟʟᴏ [FF0000]{user_name}\n"
@@ -721,26 +832,17 @@ class FreeFireBot:
             if msg_pkt:
                 self.chat_writer.write(msg_pkt)
                 await self.chat_writer.drain()
-            
+
             await asyncio.sleep(0.3)
-
-            # ৩. 🔥 MAHIR_WRR_Room_Packet কল করা (আপনার রিকোয়েস্ট অনুযায়ী)
-            if self.online_writer:
-                wrr_pkt = await MAHIR_WRR_Room_Packet(room_id, self.key, self.iv)
-                if wrr_pkt:
-                    self.online_writer.write(wrr_pkt)
-                    await self.online_writer.drain()
-                    console.print(f"[bold magenta][{self.uid}][/bold magenta] [bold green]➜ WRR Packet (81) Sent automatically.[/bold green]")
-
-            # ৪. ম্যাপ এবং অন্যান্য শেয়ার পাঠানো
             await self.send_share(room_id, "map")
             await asyncio.sleep(0.2)
-            
+            await self.send_share(room_id, "hud")
+
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.uid, last_room_id=str(room_id), last_active=curr_time_str)
-            
-        except Exception as e:
-            console.print(f"[red]Error in Auto_Room_Welcome: {e}[/red]")
+
+        except Exception:
+            pass
 
     # ---------- ROOM MEMBER EXTRACTION ----------
     def extract_room_members(self, packet_json):
@@ -769,18 +871,18 @@ class FreeFireBot:
         return members
 
     def get_room_mode(self):
-        # জোড় সংখ্যক ইন্ডেক্সের বটগুলো 1v1 এবং বিজোড়গুলো 2v2 খুলবে
-        if self.index % 2 == 0:
+        # 50% probability: random 1v1 অথবা 2v2
+        if random.random() < 0.5:
             return Room1v1, "1v1"
         else:
             return Room2v2, "2v2"
 
-    # ---------- TCP ONLINE (ROOM UPDATE - CLEAN LOGGING) ----------
+    # ---------- TCP ONLINE ----------
     async def tcp_online(self, ip, port, auth_token):
-        self.current_room_id = None 
-        self.is_in_side2 = False 
+        self.current_room_id = None
+        self.is_in_side2 = False
         self.room_members = set()
-        
+
         while self.is_running:
             try:
                 reader, writer = await asyncio.open_connection(ip, int(port))
@@ -789,22 +891,43 @@ class FreeFireBot:
                 self.reader, self.online_writer = reader, writer
                 self.is_online = True
                 update_bot_info(self.uid, status="✅ Online", room_active=True)
-                
+
                 selected_color = get_random_color()
                 room_name = f"[B]➥{selected_color}ᎷAH!Ꮢ"
                 room_func, mode_name = self.get_room_mode()
-                self.room_pkt = room_func(room_name, self.key, self.iv)
-                
+
+                console.print(f"[bold cyan][DEBUG {self.uid}] Room Mode: {mode_name}[/bold cyan]")
+
+                try:
+                    self.room_pkt = room_func(room_name, self.key, self.iv)
+                    if self.room_pkt:
+                        console.print(f"[bold green][DEBUG {self.uid}] Room Packet Created: {len(self.room_pkt)} bytes[/bold green]")
+                    else:
+                        console.print(f"[bold red][DEBUG {self.uid}] Room Packet is None/Empty![/bold red]")
+                        self.is_online = False
+                        await asyncio.sleep(5)
+                        continue
+                except Exception as e:
+                    console.print(f"[bold red]❌ [{self.uid}] ROOM CREATE FAILED: {type(e).__name__}: {e}[/bold red]")
+                    import traceback
+                    traceback.print_exc()
+                    self.is_online = False
+                    await asyncio.sleep(5)
+                    continue
+
                 self.online_writer.write(self.room_pkt)
                 await self.online_writer.drain()
                 self.room_created = True
-                
+                console.print(f"[bold yellow][DEBUG {self.uid}] Room packet sent, waiting for response...[/bold yellow]")
+
                 while self.is_running and self.is_online:
                     try:
                         data = await asyncio.wait_for(self.reader.read(65536), timeout=5.0)
-                        if not data: break
+                        if not data:
+                            console.print(f"[bold red][DEBUG {self.uid}] Server closed connection[/bold red]")
+                            break
                         data_hex = data.hex()
-                        
+
                         if data_hex.startswith("0e00"):
                             decoded = DeCode_PackEt(data_hex[10:])
                             if decoded:
@@ -812,25 +935,18 @@ class FreeFireBot:
                                     packet_json = json.loads(decoded)
                                     cmd_type = packet_json.get('4', {}).get('data')
                                     f5 = packet_json.get('5', {}).get('data', {})
-                                    
-                                    # --- ১. রুম এবং বটের তথ্য ডিটেকশন (CMD 5, 25, 1) ---
+
                                     if cmd_type in [5, 25, 1]:
                                         room_info = f5.get('2', {}).get('data', {})
-                                        
-                                        # সঠিক ডেটা এক্সট্রাকশন (আপনার দেওয়া প্যাকেট পাথ অনুযায়ী)
                                         r_id = room_info.get('1', {}).get('data')
                                         r_name = room_info.get('2', {}).get('data')
                                         bot_acc_id = room_info.get('3', {}).get('data')
-                                        
-                                        # বটের নাম ফিল্ড ১২ এর ভেতরে ৩ নম্বর সাব-ফিল্ডে থাকে
                                         f12 = room_info.get('12', {}).get('data', {})
                                         bot_acc_name = f12.get('3', {}).get('data') if isinstance(f12, dict) else "Unknown"
 
                                         if r_id and str(r_id) != str(self.current_room_id):
-                                            if 10000000 < int(r_id) < 999999999: # Room ID ভ্যালিডেশন
+                                            if 10000000 < int(r_id) < 999999999:
                                                 self.current_room_id = r_id
-                                                
-                                                # টার্মিনালে ক্লিন প্যানেল
                                                 console.print(Panel(
                                                     f"[bold green]🏠 Room Name   :[/bold green] [white]{r_name}[/white]\n"
                                                     f"[bold green]🆔 Room ID     :[/bold green] [bold yellow]{r_id}[/bold yellow]\n"
@@ -841,18 +957,16 @@ class FreeFireBot:
                                                 ))
                                                 update_bot_info(self.uid, last_room_id=str(r_id), room_active=True)
 
-                                    # --- ২. প্লেয়ার জয়েন এবং সাইড চেঞ্জ ---
                                     user_info = f5.get('1', {}).get('data', {})
                                     if isinstance(user_info, dict):
                                         u_uid = user_info.get('2', {}).get('data')
                                         u_name = user_info.get('3', {}).get('data')
-                                        
+
                                         if u_uid and str(u_uid) != str(self.bot_uid) and len(str(u_uid)) > 8:
                                             uid_str = str(u_uid)
                                             if uid_str not in self.room_members:
                                                 p_name = str(u_name) if u_name and not str(u_name).isdigit() else "Player"
-                                                
-                                                # সাইড চেঞ্জ (Side 2)
+
                                                 if not self.is_in_side2 and self.current_room_id:
                                                     move_pkt = await Mahir_Room_Site_Change(self.current_room_id, self.bot_uid, 2, 1, self.key, self.iv)
                                                     if move_pkt:
@@ -861,32 +975,29 @@ class FreeFireBot:
                                                         self.is_in_side2 = True
                                                         await asyncio.sleep(0.2)
 
-                                                # ওয়েলকাম মেসেজ
                                                 c_code = room_info.get('36', {}).get('data') or room_info.get('40', {}).get('data')
                                                 if self.current_room_id and c_code:
                                                     asyncio.create_task(self.Auto_Room_Welcome(self.current_room_id, c_code, uid_str, user_name=p_name))
-                                                
+
                                                 self.room_members.add(uid_str)
                                                 console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold green]➜ Player Joined:[/bold green] {p_name} ({uid_str})")
 
-                                    # --- ৩. রুম ফুল ডিটেকশন ও স্টার্ট (আপনার দেওয়া CMD 65 অনুযায়ী) ---
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
                                             console.print(f"[bold red]!!! ROOM FULL ({self.current_room_id}) !!! STARTING MATCH...[/bold red]")
-                                            
+
                                             start_pkt = await Mahir_Room_START(self.current_room_id, self.key, self.iv)
                                             if start_pkt:
                                                 self.online_writer.write(start_pkt)
                                                 await self.online_writer.drain()
-                                                await asyncio.sleep(1.5) # MMM Style Delay
-                                                
+                                                await asyncio.sleep(1.5)
+
                                                 exit_pkt = await Mahir_Room_ExiT(self.bot_uid, self.key, self.iv)
                                                 if exit_pkt:
                                                     self.online_writer.write(exit_pkt)
                                                     await self.online_writer.drain()
-                                                    
-                                                    # ডাটা রিসেট ও রিক্রিয়েট
+
                                                     self.room_members.clear()
                                                     self.is_in_side2 = False
                                                     await asyncio.sleep(0.5)
@@ -894,7 +1005,6 @@ class FreeFireBot:
                                                     await self.online_writer.drain()
                                                     console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold green]New Room Created.[/bold green]")
 
-                                    # --- ৪. কেউ বেরিয়ে গেলে (Cmd 7) ---
                                     if cmd_type == 7:
                                         self.room_members.clear()
                                         if self.is_in_side2 and self.current_room_id:
@@ -905,16 +1015,21 @@ class FreeFireBot:
                                                 await self.online_writer.drain()
                                                 self.is_in_side2 = False
 
-                                except Exception: pass
-                        
-                    except asyncio.TimeoutError: continue
-                    except Exception: break
-                        
-            except Exception: 
+                                except Exception as e:
+                                    console.print(f"[bold red][DEBUG {self.uid}] Packet parse error: {e}[/bold red]")
+
+                    except asyncio.TimeoutError:
+                        continue
+                    except Exception as e:
+                        console.print(f"[bold red][DEBUG {self.uid}] Read error: {e}[/bold red]")
+                        break
+
+            except Exception as e:
+                console.print(f"[bold red]❌ [{self.uid}] ONLINE ERROR: {type(e).__name__}: {e}[/bold red]")
                 self.is_online = False
             await asyncio.sleep(10)
 
-    # ---------- TCP CHAT (COMMAND HANDLING) ----------
+    # ---------- TCP CHAT ----------
     async def tcp_chat(self, ip, port, auth_token, key, iv, ready_event):
         while self.is_running:
             try:
@@ -924,7 +1039,7 @@ class FreeFireBot:
                 self.chat_reader = reader
                 self.chat_writer = writer
                 ready_event.set()
-                
+
                 while self.is_running:
                     try:
                         data = await asyncio.wait_for(self.chat_reader.read(4096), timeout=5.0)
@@ -942,31 +1057,22 @@ class FreeFireBot:
                                     sender_uid = f5.get('1', {}).get('data')
                                     if str(sender_uid) == str(self.bot_uid):
                                         continue
-                                    
-                                    # --- 'st' কমান্ড: স্টার্ট -> ১ সেকেন্ড ওয়েট -> এক্সিট -> রিক্রিয়েট ---
+
                                     if msg_text == "st":
                                         if self.current_room_id and self.online_writer:
-                                            # ১. ম্যাচ স্টার্ট প্যাকেট পাঠানো
                                             st_pkt = await Mahir_Room_START(self.current_room_id, self.key, self.iv)
                                             if st_pkt:
                                                 self.online_writer.write(st_pkt)
                                                 await self.online_writer.drain()
-                                                
-                                                # ২. ১ সেকেন্ড অপেক্ষা
                                                 await asyncio.sleep(1.0)
-                                                
-                                                # ৩. রুম থেকে এক্সিট প্যাকেট পাঠানো
+
                                                 ex_pkt = await Mahir_Room_ExiT(self.bot_uid, self.key, self.iv)
                                                 if ex_pkt:
                                                     self.online_writer.write(ex_pkt)
                                                     await self.online_writer.drain()
-                                                    
-                                                    # ৪. ডাটা রিসেট ও নতুন রুম তৈরি (Recreate)
                                                     self.room_members.clear()
                                                     self.is_in_side2 = False
                                                     await asyncio.sleep(0.5)
-                                                    
-                                                    # tcp_online থেকে সেভ করা প্যাকেটটি পুনরায় পাঠানো
                                                     if hasattr(self, 'room_pkt') and self.room_pkt:
                                                         self.online_writer.write(self.room_pkt)
                                                         await self.online_writer.drain()
@@ -986,7 +1092,7 @@ class FreeFireBot:
                                         if pkt:
                                             self.chat_writer.write(pkt)
                                             await self.chat_writer.drain()
-                                    
+
                                     elif "/app" in msg_text:
                                         app_msg = (
                                             "[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
@@ -1000,14 +1106,14 @@ class FreeFireBot:
                                         if pkt:
                                             self.chat_writer.write(pkt)
                                             await self.chat_writer.drain()
-                                            
+
                                 except Exception:
                                     pass
                     except asyncio.TimeoutError:
                         continue
                     except Exception:
                         break
-                        
+
             except Exception:
                 pass
             await asyncio.sleep(10)
@@ -1027,8 +1133,8 @@ class FreeFireBot:
                     update_bot_info(self.uid, status="❌ Auth Failed", room_active=False)
                     await asyncio.sleep(10)
                     continue
-                    
-                payload = await EncRypTMajoRLoGin(open_id, access_token)
+
+                payload = await EncRypTMajoRLoGin(open_id, access_token, version)
                 response = await MajorLogin(payload)
                 if not response:
                     console.print(Panel(
@@ -1040,10 +1146,37 @@ class FreeFireBot:
                     update_bot_info(self.uid, status="❌ Login Failed", room_active=False)
                     await asyncio.sleep(10)
                     continue
-                    
-                auth_data = MajoRLoGinrEs_pb2.MajorLoginRes()
-                auth_data.ParseFromString(response)
-                
+
+                # ★★★ Decrypt MajorLogin response using DecRypTMajoRLoGin ★★★
+                try:
+                    auth_data = await DecRypTMajoRLoGin(response)
+                except Exception as e:
+                    console.print(Panel(
+                        f"[bold red]UID :[/bold red] {self.uid}\n[bold red]Error:[/bold red] Decrypt failed: {e}",
+                        title=f"[bold red]❌ DECRYPT FAILED ({self.server.upper()})[/bold red]",
+                        border_style="red",
+                        expand=False
+                    ))
+                    update_bot_info(self.uid, status="❌ Decrypt Failed", room_active=False)
+                    await asyncio.sleep(10)
+                    continue
+
+                # ★ Verify parsed data ★
+                if not getattr(auth_data, 'token', None) or not getattr(auth_data, 'url', None):
+                    console.print(Panel(
+                        f"[bold red]UID :[/bold red] {self.uid}\n"
+                        f"[bold red]Error:[/bold red] Empty auth data!\n"
+                        f"[yellow]token:[/yellow] {getattr(auth_data, 'token', None)}\n"
+                        f"[yellow]url:[/yellow] {getattr(auth_data, 'url', None)}\n"
+                        f"[yellow]account_uid:[/yellow] {getattr(auth_data, 'account_uid', None)}",
+                        title=f"[bold red]❌ AUTH DATA EMPTY ({self.server.upper()})[/bold red]",
+                        border_style="red",
+                        expand=False
+                    ))
+                    update_bot_info(self.uid, status="❌ Empty Auth Data", room_active=False)
+                    await asyncio.sleep(10)
+                    continue
+
                 login_data = await GetLoginData(auth_data.url, payload, auth_data.token)
                 if not login_data:
                     console.print(Panel(
@@ -1055,64 +1188,67 @@ class FreeFireBot:
                     update_bot_info(self.uid, status="❌ Data Failed", room_active=False)
                     await asyncio.sleep(10)
                     continue
-                    
+
                 port_data = PorTs_pb2.GetLoginData()
                 port_data.ParseFromString(login_data)
-                
+
                 self.key = auth_data.key
                 self.iv = auth_data.iv
                 self.region = auth_data.region
                 self.bot_uid = auth_data.account_uid
-                
+
                 try:
                     dec_jwt = jwt.decode(auth_data.token, options={"verify_signature": False})
                     self.Nm = dec_jwt.get('nickname') or "Unknown"
                     update_bot_info(self.uid, account_uid=str(auth_data.account_uid))
                 except Exception:
                     self.Nm = "Unknown"
-                
+
                 online_ip, online_port = port_data.Online_IP_Port.split(":")
                 chat_ip, chat_port = port_data.AccountIP_Port.split(":")
-                
-                # ★ দুটো আলাদা auth token জেনারেশন (CHAT -> 6d19, ONLINE -> 7319)
-                auth_token_chat = create_auth_token_chat(
-                    auth_data.account_uid, 
-                    auth_data.token, 
-                    int(auth_data.timestamp), 
-                    auth_data.key, 
-                    auth_data.iv
-                )
-                auth_token_online = create_auth_token_online(
-                    auth_data.account_uid, 
-                    auth_data.token, 
-                    int(auth_data.timestamp), 
-                    auth_data.key, 
+
+                # ---------- AUTH TOKENS ----------
+                online_auth_token = create_auth_token_online(
+                    auth_data.account_uid,
+                    auth_data.token,
+                    auth_data.timestamp,
+                    auth_data.key,
                     auth_data.iv
                 )
 
-                if not auth_token_chat or not auth_token_online:
-                    console.print("[bold red]❌ Auth token generation failed[/bold red]")
-                    update_bot_info(self.uid, status="❌ Auth Token Error", room_active=False)
+                chat_auth_token = create_auth_token_chat(
+                    auth_data.account_uid,
+                    auth_data.token,
+                    auth_data.timestamp,
+                    auth_data.key,
+                    auth_data.iv
+                )
+
+                if not online_auth_token or not chat_auth_token:
+                    console.print(Panel(
+                        f"[bold red]UID :[/bold red] {self.uid}\n[bold red]Error:[/bold red] Failed to create auth tokens!",
+                        title=f"[bold red]❌ AUTH TOKEN FAILED ({self.server.upper()})[/bold red]",
+                        border_style="red",
+                        expand=False
+                    ))
+                    update_bot_info(self.uid, status="❌ Auth Token Failed", room_active=False)
                     await asyncio.sleep(10)
                     continue
 
                 ready = asyncio.Event()
-                
-                # CHAT (6d19) টাস্ক
                 t1 = asyncio.create_task(
-                    self.tcp_chat(chat_ip, chat_port, auth_token_chat, auth_data.key, auth_data.iv, ready)
+                    self.tcp_chat(chat_ip, chat_port, chat_auth_token, auth_data.key, auth_data.iv, ready)
                 )
                 self.tasks.append(t1)
                 await ready.wait()
-                
-                # ONLINE (7319) টাস্ক
+
                 t2 = asyncio.create_task(
-                    self.tcp_online(online_ip, online_port, auth_token_online)
+                    self.tcp_online(online_ip, online_port, online_auth_token)
                 )
                 self.tasks.append(t2)
-                
+
                 await asyncio.gather(t1, t2, return_exceptions=True)
-                
+
             except Exception as e:
                 console.print(Panel(
                     f"[bold red]UID :[/bold red] {self.uid}\n[bold red]Error:[/bold red] {e}",
@@ -1154,7 +1290,7 @@ class BotHandler(BaseHTTPRequestHandler):
         body {
             min-height: 100vh;
             background: #030108;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 15% 15%, rgba(112, 0, 255, 0.25), transparent 40%),
                 radial-gradient(circle at 85% 85%, rgba(0, 240, 255, 0.15), transparent 40%),
                 radial-gradient(circle at 50% 50%, rgba(255, 0, 85, 0.1), transparent 50%);
@@ -1624,7 +1760,7 @@ class BotHandler(BaseHTTPRequestHandler):
 
         <div class="admin-panel">
             <h3 style="color: var(--primary); font-family: 'Orbitron', sans-serif;"><i class="fas fa-sliders-h"></i> Configuration Control (accs.json)</h3>
-            
+
             <div class="dropdown">
                 <button class="dropdown-btn" onclick="toggleDropdown()">
                     <i class="fas fa-tools"></i> Manage Accounts <i class="fas fa-chevron-down" style="font-size: 0.8rem; margin-left: 5px;"></i>
@@ -1673,7 +1809,7 @@ class BotHandler(BaseHTTPRequestHandler):
                     const offline = document.getElementById('offlineBots');
                     const totalJsonAccs = document.getElementById('totalJsonAccounts');
                     const activeRooms = document.getElementById('activeRooms');
-                    
+
                     if (data.total_accs !== undefined) {
                         totalJsonAccs.textContent = data.total_accs;
                     }
@@ -1683,7 +1819,7 @@ class BotHandler(BaseHTTPRequestHandler):
                     let roomActiveCount = 0;
                     let html = '';
                     const entries = Object.entries(botData);
-                    
+
                     if (entries.length === 0) {
                         html = `<tr><td colspan="5" class="empty-msg"><i class="fas fa-robot"></i> No active bot processes</td></tr>`;
                     } else {
@@ -1693,7 +1829,6 @@ class BotHandler(BaseHTTPRequestHandler):
                             const roomActive = info.room_active === true;
                             const isOnline = statusStr.includes('✅') || statusStr.includes('Online') || statusStr.includes('Connected');
 
-                            // Status classification
                             if (isOnline) {
                                 statusText = 'Online';
                                 badgeClass = 'badge-online';
@@ -1708,17 +1843,14 @@ class BotHandler(BaseHTTPRequestHandler):
                                 offlineCount++;
                             }
 
-                            // Active Rooms count: only if Online AND room_active True AND last_room_id not "None"
                             if (isOnline && roomActive && info.last_room_id && info.last_room_id !== "None") {
                                 roomActiveCount++;
                             }
 
-                            // Account UID: actual account_uid
-                            const accountUid = (info.account_uid && info.account_uid !== "Loading...") 
-                                ? `<div class="uid-badge"><i class="fas fa-id-card"></i> ${info.account_uid}</div>` 
+                            const accountUid = (info.account_uid && info.account_uid !== "Loading...")
+                                ? `<div class="uid-badge"><i class="fas fa-id-card"></i> ${info.account_uid}</div>`
                                 : `<span style="color:#666;">Fetching UID...</span>`;
 
-                            // Room ID: show only if Online, roomActive True, and last_room_id not "None"
                             const roomId = (isOnline && roomActive && info.last_room_id && info.last_room_id !== "None")
                                 ? `<div class="room-badge"><i class="fas fa-door-open"></i> ${info.last_room_id}</div>`
                                 : `<span style="color:#555;">No Active Room</span>`;
@@ -1824,7 +1956,7 @@ class BotHandler(BaseHTTPRequestHandler):
 </body>
 </html>'''
             self.wfile.write(html_content.encode('utf-8'))
-        
+
         elif self.path == '/status':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -1875,7 +2007,6 @@ def start_web_server():
     try:
         server = HTTPServer(('0.0.0.0', port), BotHandler)
         console.print(f"[bold green]🌐 Web Dashboard running at: http://localhost:{port}[/bold green]")
-        # অটোমেটিক ব্রাউজার ওপেন হবে
         webbrowser.open(f'http://localhost:{port}')
         server.serve_forever()
     except OSError:
@@ -1884,22 +2015,19 @@ def start_web_server():
 # ========== MAIN FUNCTION ==========
 async def main_async():
     print(render('MAHIR', colors=['white', 'red'], align='center'))
-    
-    # অটো-রিস্টার্ট থ্রেড
+
     threading.Thread(target=AuTo_ResTartinG, daemon=True).start()
 
-    # ওয়েব সার্ভার
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     await asyncio.sleep(1)
 
-    # একবারে ৫০টি করে আইডি লোড করার টাস্ক
     asyncio.create_task(batch_account_loader())
-    
+
     console.print(Panel(
         "[bold green]✅ System Active & Running[/bold green]\n"
         "[cyan]🌐 Dashboard: http://localhost:8080[/cyan]\n"
-        "[yellow]🔄 Batch Mode: 150 Accounts Simultaneously[/yellow]",
+        "[yellow]🔄 Real-time Mode: Accounts launch instantly[/yellow]",
         title="[bold red]🔥 MAHIR BOT SYSTEM 🔥[/bold red]",
         border_style="bright_red",
         expand=False
