@@ -1,15 +1,32 @@
 #!/usr/bin/env python3
 
-import subprocess, sys, importlib, os, ssl, json, time, random, asyncio, threading, gc, re, struct
+import subprocess
+import sys
+import importlib
+import os
+import ssl
+import json
+import time
+import random
+import asyncio
+import threading
+import gc
+import re
+import struct
+from collections import deque
 from datetime import datetime
 from io import BytesIO
-import gzip, http.client, uuid, webbrowser
+import gzip
+import http.client
+import uuid
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
+import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
-import aiohttp, jwt
+import aiohttp
+import jwt
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
@@ -17,13 +34,33 @@ from cfonts import render
 from M4H1R import *
 
 from protobuf_decoder.protobuf_decoder import Parser
+
 from Pb2 import MajoRLoGinrEs_pb2, PorTs_pb2, MajoRLoGinrEq_pb2
 
 console = Console()
 
-# ================================================================
-#   GLOBAL STATE
-# ================================================================
+# ========== LIVE LOG BUFFER ==========
+log_buffer = deque(maxlen=500)
+log_lock = threading.Lock()
+_orig_console_print = console.print
+
+def _patched_console_print(*args, **kwargs):
+    try:
+        _orig_console_print(*args, **kwargs)
+    except Exception:
+        pass
+    try:
+        text = " ".join(str(a) for a in args)
+        text = re.sub(r'\[/?[a-zA-Z0-9_#= ]+\]', '', text)
+        ts = datetime.now().strftime("%H:%M:%S")
+        with log_lock:
+            log_buffer.append(f"[{ts}] {text}")
+    except Exception:
+        pass
+
+console.print = _patched_console_print
+
+# ========== GLOBAL TRACKING ==========
 welcome_tracking = {}
 running_bots = set()
 running_bots_lock = threading.Lock()
@@ -38,88 +75,81 @@ active_lock = threading.Lock()
 login_url, ob, version = "https://loginbp.ppmainecoonghj.com/", "OB55", "1.132.1"
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 WEB_CONFIG_FILE = "web_config.json"
-ACCESS_PASSWORD = "MAHIR ROOM ACCESS"
 
-# ================================================================
-#   LIVE LOGS
-# ================================================================
-log_buffer = []
-log_lock = threading.Lock()
-MAX_LOGS = 300
+# ========== SIGNAL SYSTEM (Restart / Recreate) ==========
+signal_lock = threading.Lock()
+_restart_timestamp = 0
+_recreate_timestamp = 0
 
-def add_log(msg, level="info"):
-    try:
-        with log_lock:
-            ts = datetime.now().strftime("%H:%M:%S")
-            log_buffer.append({"ts": ts, "level": level, "msg": str(msg)})
-            if len(log_buffer) > MAX_LOGS:
-                log_buffer[:] = log_buffer[-MAX_LOGS:]
-    except Exception:
-        pass
+def trigger_restart_all():
+    global _restart_timestamp
+    with signal_lock:
+        _restart_timestamp = time.time()
 
-def log_print(msg, level="info", rich_style=None):
-    add_log(msg, level)
-    try:
-        console.print(msg)
-    except Exception:
-        pass
+def trigger_recreate_all():
+    global _recreate_timestamp
+    with signal_lock:
+        _recreate_timestamp = time.time()
 
-# ================================================================
-#   ROOM RECREATE REQUESTS (per bot)
-# ================================================================
-recreate_requests = set()
-recreate_lock = threading.Lock()
+def get_restart_timestamp():
+    with signal_lock:
+        return _restart_timestamp
 
-def request_room_recreate(uid):
-    with recreate_lock:
-        recreate_requests.add(str(uid))
-
-def check_and_clear_recreate(uid):
-    with recreate_lock:
-        if str(uid) in recreate_requests:
-            recreate_requests.discard(str(uid))
-            return True
-        return False
-
-# ================================================================
-#   ACCOUNT RESTART
-# ================================================================
-restart_all_flag = threading.Event()
-
-def request_restart_all():
-    restart_all_flag.set()
+def get_recreate_timestamp():
+    with signal_lock:
+        return _recreate_timestamp
 
 # ================================================================
 #   DEFAULT CONFIGURATIONS
 # ================================================================
 DEFAULT_ROOM_MODES = {
-    "Roomlw": {1: 2, 2: {1: 11, 2: 43, 3: 1, 4: "{room_name}", 6: 4, 7: 1, 8: 1, 9: 1, 11: 1,
-        14: 3030901227, 15: {1: "IDC3", 2: 165, 3: "BD"},
-        16: b"\x01\x07\x09\x0a\x0b\x12\x19\x20\x27\x29",
-        18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en",
-        46: 1033, 48: 1, 49: {1: 21},
-        50: {1: 35670336, 2: 10757192, 3: 80},
-        51: "a_6534489873065906362", 56: 1}},
-    "Room1v1": {1: 2, 2: {1: 1, 2: 15, 3: 0, 4: "{room_name}", 6: 2, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 3030901227, 15: {1: "IDC3", 2: 126, 3: "BD"},
-        16: b"\x01\x03\x04\x07\x09\x0a\x0b\x12\x0f\x0e\x16\x19\x1a\x20\x1d",
-        18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en", 48: 1, 49: {1: 2}}},
-    "Room2v2": {1: 2, 2: {1: 1, 2: 15, 3: 1, 4: "{room_name}", 6: 4, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 3030901227, 15: {1: "IDC3", 2: 126, 3: "BD"},
-        16: b"\x01\x03\x04\x07\x09\x0a\x0b\x12\x0f\x0e\x16\x19\x1a\x20\x1d",
-        18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en", 48: 1, 49: {1: 2}}},
-    "Room4v4": {1: 2, 2: {1: 1, 2: 15, 3: 3, 4: "{room_name}", 6: 8, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 3030901227, 15: {1: "IDC3", 2: 126, 3: "BD"},
-        16: b"\x01\x03\x04\x07\x09\x0a\x0b\x12\x0f\x0e\x16\x19\x1a\x20\x1d",
-        18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en", 48: 1, 49: {1: 2}}},
-    "nRoom1v1": {1: 2, 2: {1: 1, 2: 15, 3: 0, 4: "{room_name}", 6: 2, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 3030901227, 15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}},
-    "nRoom2v2": {1: 2, 2: {1: 1, 2: 15, 3: 1, 4: "{room_name}", 6: 4, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 3030901227, 15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}},
-    "nRoom4v4": {1: 2, 2: {1: 1, 2: 15, 3: 3, 4: "{room_name}", 6: 8, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 3030901227, 15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}},
-    "nRoom6v6": {1: 2, 2: {1: 1, 2: 15, 3: 5, 4: "{room_name}", 6: 12, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
-        14: 36981056, 15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}},
+    "Roomlw": {
+        1: 2, 2: {1: 11, 2: 43, 3: 1, 4: "{room_name}", 6: 4, 7: 1, 8: 1, 9: 1, 11: 1,
+            14: 3030901227, 15: {1: "IDC3", 2: 165, 3: "BD"},
+            16: b"\x01\x07\x09\x0a\x0b\x12\x19\x20\x27\x29",
+            18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en",
+            46: 1033, 48: 1, 49: {1: 21},
+            50: {1: 35670336, 2: 10757192, 3: 80},
+            51: "a_6534489873065906362", 56: 1}
+    },
+    "Room1v1": {
+        1: 2, 2: {1: 1, 2: 15, 3: 0, 4: "{room_name}", 6: 2, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 3030901227, 15: {1: "IDC3", 2: 126, 3: "BD"},
+            16: b"\x01\x03\x04\x07\x09\x0a\x0b\x12\x0f\x0e\x16\x19\x1a\x20\x1d",
+            18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en", 48: 1, 49: {1: 2}}
+    },
+    "Room2v2": {
+        1: 2, 2: {1: 1, 2: 15, 3: 1, 4: "{room_name}", 6: 4, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 3030901227, 15: {1: "IDC3", 2: 126, 3: "BD"},
+            16: b"\x01\x03\x04\x07\x09\x0a\x0b\x12\x0f\x0e\x16\x19\x1a\x20\x1d",
+            18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en", 48: 1, 49: {1: 2}}
+    },
+    "Room4v4": {
+        1: 2, 2: {1: 1, 2: 15, 3: 3, 4: "{room_name}", 6: 8, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 3030901227, 15: {1: "IDC3", 2: 126, 3: "BD"},
+            16: b"\x01\x03\x04\x07\x09\x0a\x0b\x12\x0f\x0e\x16\x19\x1a\x20\x1d",
+            18: 3030901002000, 27: 1, 34: b"\x00\x01", 40: "en", 48: 1, 49: {1: 2}}
+    },
+    "nRoom1v1": {
+        1: 2, 2: {1: 1, 2: 15, 3: 0, 4: "{room_name}", 6: 2, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 3030901227,
+            15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}
+    },
+    "nRoom2v2": {
+        1: 2, 2: {1: 1, 2: 15, 3: 1, 4: "{room_name}", 6: 4, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 3030901227,
+            15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}
+    },
+    "nRoom4v4": {
+        1: 2, 2: {1: 1, 2: 15, 3: 3, 4: "{room_name}", 6: 8, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 3030901227,
+            15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}
+    },
+    "nRoom6v6": {
+        1: 2, 2: {1: 1, 2: 15, 3: 5, 4: "{room_name}", 6: 12, 7: 1, 8: 1, 9: 1, 11: 1, 12: 2,
+            14: 36981056,
+            15: [{1: "IDC1", 2: 3000, 3: "BD"}, {1: "IDC2", 2: 3000, 3: "BD"}]}
+    },
 }
 
 DEFAULT_WELCOME_MSG = (
@@ -175,34 +205,48 @@ DEFAULT_SHARE_PACKETS = {
 }
 
 DEFAULT_COMMANDS = {
-    "/store": {"enabled": True, "match": "contains", "type": "message",
-        "response": ("[C][FFD700]❖━━━━━━━━━━━━━━━❖\n[C][B][00FFFF]⚡ MAHIR BOT STORE ⚡\n"
-            "[C][FFD700]────────────────\n[C][00FF00]🤖 TCP BOT Price : [FFFF00]500 BDT\n"
+    "/store": {
+        "enabled": True, "match": "contains", "type": "message",
+        "response": (
+            "[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
+            "[C][B][00FFFF]⚡ MAHIR BOT STORE ⚡\n"
+            "[C][FFD700]────────────────\n"
+            "[C][00FF00]🤖 TCP BOT Price : [FFFF00]500 BDT\n"
             "[C][00FF00]🌐 Website       : [FFFF00]mahir🫡.xo🫡.🫡je\n"
-            "[C][00FF00]👤 Owner Telegram : [FFFF00]@MAHIR0208\n[C][FFD700]❖━━━━━━━━━━━━━━━❖")},
-    "/app": {"enabled": True, "match": "contains", "type": "message",
-        "response": ("[C][FFD700]❖━━━━━━━━━━━━━━━❖\n[C][B][00FFFF]📱 MAHIR TCP OFFICIAL APP 📱\n"
-            "[C][FFD700]────────────────\n[C][FFFFFF]Download Link:\n"
+            "[C][00FF00]👤 Owner Telegram : [FFFF00]@MAHIR0208\n"
+            "[C][FFD700]❖━━━━━━━━━━━━━━━❖"
+        )
+    },
+    "/app": {
+        "enabled": True, "match": "contains", "type": "message",
+        "response": (
+            "[C][FFD700]❖━━━━━━━━━━━━━━━❖\n"
+            "[C][B][00FFFF]📱 MAHIR TCP OFFICIAL APP 📱\n"
+            "[C][FFD700]────────────────\n"
+            "[C][FFFFFF]Download Link:\n"
             "[C][00FF00]https🙂://www🙂.mediafire🙂.com🙂/file🙂/lvykrek🙂51q17hae🙂/MAHIR_TCP🙂.apk\n"
-            "[C][FFD700]❖━━━━━━━━━━━━━━━❖")},
+            "[C][FFD700]❖━━━━━━━━━━━━━━━❖"
+        )
+    },
     "st": {"enabled": True, "match": "exact", "type": "start_room"}
 }
 
+# ================================================================
+#   WEB CONFIG
+# ================================================================
 web_config = {
     "enabled_modes": ["Room1v1", "Room2v2"],
     "room_name_template": "[B]➥{color}ᎷAH!Ꮢ",
     "use_mode": "all",
     "welcome_msg": DEFAULT_WELCOME_MSG,
     "welcome_shares": ["map"],
+    "send_wrr": True,
     "room_modes": {},
     "commands": {},
     "share_packets": {},
 }
 web_config_lock = threading.Lock()
 
-# ================================================================
-#   JSON-SAFE SERIALIZATION
-# ================================================================
 def to_json_safe(obj):
     if isinstance(obj, dict):
         return {str(k): to_json_safe(v) for k, v in obj.items()}
@@ -210,17 +254,18 @@ def to_json_safe(obj):
         return [to_json_safe(item) for item in obj]
     elif isinstance(obj, (bytes, bytearray)):
         return {"__hex__": bytes(obj).hex()}
-    return obj
+    else:
+        return obj
 
 def from_json_safe(obj):
     if isinstance(obj, dict):
         if "__hex__" in obj and len(obj) == 1:
             try: return bytes.fromhex(obj["__hex__"])
-            except: return b""
+            except Exception: return b""
         result = {}
         for k, v in obj.items():
             try: key = int(k)
-            except: key = k
+            except (ValueError, TypeError): key = k
             result[key] = from_json_safe(v)
         return result
     elif isinstance(obj, list):
@@ -265,13 +310,15 @@ def load_web_config():
             ws = saved.get("welcome_shares")
             if isinstance(ws, list):
                 web_config["welcome_shares"] = [s for s in ws if isinstance(s, str)]
+            sw = saved.get("send_wrr")
+            if isinstance(sw, bool): web_config["send_wrr"] = sw
 
             rmodes = saved.get("room_modes", {})
             modes = {}
             for name, default_fields in DEFAULT_ROOM_MODES.items():
                 if name in rmodes:
                     try: modes[name] = from_json_safe(rmodes[name])
-                    except: modes[name] = _deep_copy_defaults(default_fields)
+                    except Exception: modes[name] = _deep_copy_defaults(default_fields)
                 else: modes[name] = _deep_copy_defaults(default_fields)
             web_config["room_modes"] = modes
 
@@ -281,15 +328,16 @@ def load_web_config():
                 if name in sp:
                     try:
                         loaded = from_json_safe(sp[name])
-                        shares[name] = loaded if isinstance(loaded, dict) else dict(default_val)
-                    except: shares[name] = dict(default_val)
+                        if isinstance(loaded, dict): shares[name] = loaded
+                        else: shares[name] = dict(default_val)
+                    except Exception: shares[name] = dict(default_val)
                 else: shares[name] = dict(default_val)
             for name, val in sp.items():
                 if name not in shares:
                     try:
                         loaded = from_json_safe(val)
                         if isinstance(loaded, dict): shares[name] = loaded
-                    except: pass
+                    except Exception: pass
             web_config["share_packets"] = shares
 
             cmds_saved = saved.get("commands", {})
@@ -298,20 +346,21 @@ def load_web_config():
                 if name in cmds_saved:
                     try:
                         loaded = from_json_safe(cmds_saved[name])
-                        commands[name] = loaded if isinstance(loaded, dict) else dict(default_val)
-                    except: commands[name] = dict(default_val)
+                        if isinstance(loaded, dict): commands[name] = loaded
+                        else: commands[name] = dict(default_val)
+                    except Exception: commands[name] = dict(default_val)
                 else: commands[name] = dict(default_val)
             for name, val in cmds_saved.items():
                 if name not in commands:
                     try:
                         loaded = from_json_safe(val)
                         if isinstance(loaded, dict): commands[name] = loaded
-                    except: pass
+                    except Exception: pass
             web_config["commands"] = commands
 
-        add_log(f"✅ Config Loaded: modes={web_config['enabled_modes']}", "success")
+        console.print(f"[bold green]✅ Web Config Loaded[/bold green]")
     except Exception as e:
-        add_log(f"Config Load Error: {e}", "error")
+        console.print(f"[bold red]Web Config Load Error: {e}[/bold red]")
         with web_config_lock:
             web_config["room_modes"] = {k: _deep_copy_defaults(v) for k, v in DEFAULT_ROOM_MODES.items()}
             web_config["share_packets"] = {k: dict(v) for k, v in DEFAULT_SHARE_PACKETS.items()}
@@ -326,6 +375,7 @@ def save_web_config():
                 "use_mode": web_config["use_mode"],
                 "welcome_msg": web_config["welcome_msg"],
                 "welcome_shares": list(web_config["welcome_shares"]),
+                "send_wrr": web_config.get("send_wrr", True),
                 "room_modes": to_json_safe(web_config["room_modes"]),
                 "commands": to_json_safe(web_config["commands"]),
                 "share_packets": to_json_safe(web_config["share_packets"]),
@@ -334,7 +384,7 @@ def save_web_config():
             json.dump(data, f, indent=4, ensure_ascii=False)
         return True
     except Exception as e:
-        add_log(f"Config Save Error: {e}", "error")
+        console.print(f"[bold red]Web Config Save Error: {e}[/bold red]")
         return False
 
 # ================================================================
@@ -375,10 +425,11 @@ def extract_player_name(login_data_bytes):
                 if isinstance(name_val, (bytes, bytearray)):
                     decoded = name_val.decode('utf-8', errors='ignore')
                     if (decoded and len(decoded) < 60 and
-                        not decoded.startswith("0OuCe") and not decoded.startswith("eyJ") and
+                        not decoded.startswith("0OuCe") and
+                        not decoded.startswith("eyJ") and
                         all(c.isprintable() or c in '\u200b\u200c\u200d' for c in decoded)):
                         return decoded
-    except: pass
+    except Exception: pass
     return None
 
 def Uaa():
@@ -394,7 +445,8 @@ Hr = {
 }
 
 def get_random_color():
-    return random.choice(["[FF0000]","[00FF00]","[0000FF]","[FFFF00]","[FF00FF]","[00FFFF]","[FFFFFF]","[FFA500]","[FFC0CB]","[FFD700]"])
+    colors = ["[FF0000]","[00FF00]","[0000FF]","[FFFF00]","[FF00FF]","[00FFFF]","[FFFFFF]","[FFA500]","[FFC0CB]","[FFD700]"]
+    return random.choice(colors)
 
 def xBunnEr():
     return int(random.choice(['902000016','902000031','902000011','902000065','902000204','902000192','902000191','902000179','902000133','902045001','902038023','902048004','902039014','902000063','902000306','902047009']))
@@ -436,8 +488,10 @@ def Fix_PackEt(parsed_results):
     return result_dict
 
 def DeCode_PackEt(input_text):
-    try: return json.dumps(Fix_PackEt(Parser().parse(input_text)))
-    except: return None
+    try:
+        return json.dumps(Fix_PackEt(Parser().parse(input_text)))
+    except Exception:
+        return None
 
 async def EnC_Vr(N):
     if N<0: return b''
@@ -489,7 +543,8 @@ async def MAHIR_OpeN_RoOm_ChaT(room_id: int, chat_code: str, key: bytes, iv: byt
         fields = {1: 3, 2: {1: int(room_id), 2: 3, 3: "en", 4: str(chat_code)}}
         proto_bytes = await CrEaTe_ProTo(fields)
         return await GeneRaTePk(proto_bytes.hex(), '1215', key, iv)
-    except: return None
+    except Exception:
+        return None
 
 async def MAHIR_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: bytes, iv: bytes):
     try:
@@ -500,31 +555,35 @@ async def MAHIR_SEnd_RoOm_MsG(room_id: int, message: str, bot_uid: int, key: byt
                 9: {1: f"[C][FF0000]{message[:15]}", 2: avatar, 3: 2, 4: 330, 5: 800000304,
                     6: 66, 7: 66, 8: "MAHIR", 9: 66, 10: 1, 11: 1, 13: {1: 68, 2: 67},
                     14: {1: 1158053040, 2: 8, 3: b"\x10\x15\x08\x0A\x0B\x15\x0C\x0F\x11\x04\x07\x02\x03\x0D\x0E\x12\x01\x05\x06"}},
-                10: "en", 13: {3: 1}, 14: {}}
+                10: "en", 13: {3: 1}, 14: {}
+            }
         }
         proto_bytes = await CrEaTe_ProTo(fields)
         return await GeneRaTePk(proto_bytes.hex(), '1215', key, iv)
-    except: return None
+    except Exception:
+        return None
 
 async def Mahir_Room_Site_Change(room_id, bot_id, side, slot, key, iv):
     try:
         fields = {1: 20, 2: {1: int(room_id), 2: int(bot_id), 3: int(side), 4: int(slot), 6: 1}}
         return await GeneRaTePk((await CrEaTe_ProTo(fields)).hex(), '0e15', key, iv)
-    except: return None
+    except Exception:
+        return None
 
 async def Mahir_Room_START(room_id, key, iv):
     try:
         fields = {1: 11, 2: {1: int(room_id), 2: 1}}
         return await GeneRaTePk((await CrEaTe_ProTo(fields)).hex(), '0e15', key, iv)
-    except: return None
+    except Exception:
+        return None
 
 async def Mahir_Room_ExiT(bot_uid, key, iv):
     try:
         fields = {1: 6, 2: {1: int(bot_uid)}}
         return await GeneRaTePk((await CrEaTe_ProTo(fields)).hex(), '0e15', key, iv)
-    except: return None
+    except Exception:
+        return None
 
-# ✅ WRR Room Packet
 async def MAHIR_WRR_Room_Packet(room_id, key, iv):
     try:
         fields = {1: 81, 2: {1: int(room_id), 2: 1}}
@@ -532,7 +591,7 @@ async def MAHIR_WRR_Room_Packet(room_id, key, iv):
         final_packet = await GeneRaTePk(proto_data.hex(), '0E15', key, iv)
         return final_packet
     except Exception as e:
-        add_log(f"WRR Packet Error: {e}", "error")
+        print(f"❌ WRR Packet Error: {e}")
         return None
 
 async def GeNeRaTeAccAccess(uid, password):
@@ -545,7 +604,8 @@ async def GeNeRaTeAccAccess(uid, password):
                 if resp.status != 200: return None, None
                 data = await resp.json()
                 return data.get("open_id"), data.get("access_token")
-    except: return None, None
+    except Exception:
+        return None, None
 
 def encode_varint(value):
     result = []
@@ -659,7 +719,7 @@ async def DecRypTMajoRLoGin(MajoRLoGinResPonsE):
     def _dec_vr(buf, off):
         res, sh, st = 0, 0, off
         while True:
-            if off >= len(buf): raise IndexError()
+            if off >= len(buf): raise IndexError("Out")
             b = buf[off]; off += 1
             res += (b & 0x7F) << sh; sh += 7
             if b < 0x80: break
@@ -707,16 +767,19 @@ async def DecRypTMajoRLoGin(MajoRLoGinResPonsE):
     if parsed:
         d = _to_dict(parsed)
         if 1 in d or 8 in d or 10 in d: return ParsedMajorLogin(d)
+
     for o in range(len(buf)):
         parsed = _dec_proto(buf[o:])
         if parsed:
             d = _to_dict(parsed)
             if 1 in d or 8 in d or 10 in d: return ParsedMajorLogin(d)
+
     try:
         proto = MajoRLoGinrEs_pb2.MajorLoginRes()
         proto.ParseFromString(MajoRLoGinResPonsE)
         return proto
     except: pass
+
     return ParsedMajorLogin({})
 
 def create_auth_token_chat(account_id, jwt_token, timestamp, key, iv):
@@ -726,7 +789,8 @@ def create_auth_token_chat(account_id, jwt_token, timestamp, key, iv):
         ct = AES.new(K, AES.MODE_CBC, V).encrypt(pad(jwt_token.encode('utf-8'), AES.block_size))
         header = bytes.fromhex('6d19') + int(account_id).to_bytes(8, 'big') + int(timestamp).to_bytes(4, 'big') + len(ct).to_bytes(4, 'big')
         return (header + ct).hex()
-    except: return None
+    except Exception as e:
+        print(f"❌ CHAT AUTH: {e}"); return None
 
 def create_auth_token_online(account_uid, token, kts, key, iv):
     try:
@@ -735,7 +799,8 @@ def create_auth_token_online(account_uid, token, kts, key, iv):
         enc_token = AES.new(K, AES.MODE_CBC, V).encrypt(pad(token.encode("utf-8"), 16))
         opcode = bytes.fromhex("830c")
         return (opcode + int(account_uid).to_bytes(8, byteorder="big") + int(kts).to_bytes(4, byteorder="big") + len(enc_token).to_bytes(8, byteorder="big") + enc_token).hex()
-    except: return None
+    except Exception as e:
+        print(f"❌ ONLINE AUTH: {e}"); return None
 
 def load_accounts(file_path="accs.json"):
     try:
@@ -748,50 +813,28 @@ def load_accounts(file_path="accs.json"):
                 return {str(k): str(v) for k, v in data.items() if str(k).isdigit()}
             return {}
     except Exception as e:
-        add_log(f"Acc Load Error: {e}", "error")
+        console.print(f"[bold red]Acc Load Error: {e}[/bold red]")
         return {}
 
-# ================================================================
-#   BOT INSTANCE REGISTRY (for room recreate)
-# ================================================================
-running_bot_instances = {}   # uid -> FreeFireBot instance
-bot_instances_lock = threading.Lock()
-
 async def process_single_bot(uid, pwd, index):
-    bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=index)
-    with bot_instances_lock:
-        running_bot_instances[uid] = bot
-    try:
-        await bot.keep_online_forever()
-    finally:
-        with bot_instances_lock:
-            running_bot_instances.pop(uid, None)
+    for attempt in range(1, 3):
+        bot = FreeFireBot(uid=uid, password=pwd, server='bd', index=index)
+        bot_task = asyncio.create_task(bot.keep_online_forever())
+        wait_time = 0
+        while wait_time < 20:
+            await asyncio.sleep(0.5); wait_time += 0.5
+            if bot.is_online: return True
+        bot.is_running = False; bot_task.cancel()
+        await asyncio.sleep(0.2)
+    console.print(f"[bold red]🚫 Skipping UID {uid}.[/bold red]")
+    return False
 
 async def batch_account_loader():
     global total_accounts
     launched_accounts = set()
     active_tasks = {}
-    restart_all_flag.clear()
-
     while True:
         try:
-            if restart_all_flag.is_set():
-                add_log("🔄 Restart all requested - stopping all bots...", "warn")
-                # Cancel all tasks
-                for uid, t in list(active_tasks.items()):
-                    t.cancel()
-                await asyncio.sleep(1)
-                launched_accounts.clear()
-                active_tasks.clear()
-                with active_lock:
-                    active_accounts.clear()
-                    global online_count
-                    online_count = 0
-                with running_bots_lock:
-                    running_bots.clear()
-                restart_all_flag.clear()
-                add_log("✅ All bots stopped. Reloading...", "success")
-
             accounts = load_accounts()
             total_accounts = len(accounts)
             new_accounts = [(uid, pwd) for uid, pwd in accounts.items() if uid not in launched_accounts]
@@ -799,21 +842,26 @@ async def batch_account_loader():
                 if uid in launched_accounts: continue
                 launched_accounts.add(uid)
                 with running_bots_lock: running_bots.add(uid)
-                add_log(f"✨ New Account → UID {uid} → Launching...", "info")
+                console.print(f"[bold green]✨ New Account → UID {uid} → Launching...[/bold green]")
                 task = asyncio.create_task(process_single_bot(uid, pwd, len(launched_accounts)))
                 active_tasks[uid] = task
                 await asyncio.sleep(0.15)
             for uid in list(active_tasks.keys()):
                 if active_tasks[uid].done(): del active_tasks[uid]
         except Exception as e:
-            add_log(f"Loader Err: {e}", "error")
+            console.print(f"[bold red]Loader Err: {e}[/bold red]")
         await asyncio.sleep(1)
+
+def ResTarTinG():
+    console.print("[bold yellow]♻️ Restarting...[/bold yellow]")
+    time.sleep(0.5)
+    os.execl(sys.executable, sys.executable, *sys.argv)
 
 def AuTo_ResTartinG():
     while True:
         time.sleep(3600)
-        add_log("⚠️ Auto restart...", "warn")
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        console.print("[bold red]⚠️ Auto restart...[/bold red]")
+        ResTarTinG()
 
 # ================================================================
 #   BOT CLIENT
@@ -827,7 +875,49 @@ class FreeFireBot:
         self.is_online = False; self.Nm = "Unknown"; self.bot_uid = None
         self.chat_reader = None; self.room_created = False; self.room_members = set()
         self.current_room_id = None; self.current_room_name = None; self.is_in_side2 = False
+        self.seen_recreate_ts = 0
+        self.seen_restart_ts = 0
         update_bot_info(self.uid, status="🔄 Initializing...", room_active=False)
+
+    async def _build_and_send_room(self, mode_name, fields_template):
+        """Build room packet from template and send to online server"""
+        room_name = self.build_room_name()
+        fields = resolve_placeholders(fields_template, {"room_name": room_name})
+        proto = await CrEaTe_ProTo(fields)
+        pkt = await GeneRaTePk(proto.hex(), '0e0b', self.key, self.iv)
+        if pkt and self.online_writer:
+            self.online_writer.write(pkt)
+            await self.online_writer.drain()
+            self.room_pkt = pkt
+            console.print(f"[bold cyan]ℹ [{self.uid}] Room Created ({mode_name}) ✅[/bold cyan]")
+            return True
+        return False
+
+    async def _do_recreate(self):
+        """Exit room then recreate (used for recreate signal)"""
+        try:
+            console.print(f"[bold yellow]🔄 [{self.uid}] Recreating room...[/bold yellow]")
+            # Exit current room
+            if self.online_writer and self.bot_uid:
+                exit_pkt = await Mahir_Room_ExiT(self.bot_uid, self.key, self.iv)
+                if exit_pkt:
+                    try:
+                        self.online_writer.write(exit_pkt)
+                        await self.online_writer.drain()
+                    except: pass
+            self.room_members.clear()
+            self.is_in_side2 = False
+            self.current_room_id = None
+            self.current_room_name = None
+            update_active_account(self.uid, room_id='Pending...', room_name='Pending...')
+            await asyncio.sleep(0.8)
+            # Build new room
+            mode_name, fields_template = self.get_room_mode()
+            if await self._build_and_send_room(mode_name, fields_template):
+                return True
+        except Exception as e:
+            console.print(f"[bold red]Recreate err [{self.uid}]: {e}[/bold red]")
+        return False
 
     async def send_share(self, target_id, share_name):
         try:
@@ -837,16 +927,21 @@ class FreeFireBot:
                 return False
             fields_template = share_cfg.get("fields", {})
             share_json = share_cfg.get("share_json", "")
-            context = {"bot_uid": int(self.bot_uid), "target_id": int(target_id),
-                "timestamp": int(time.time()), "share_json": share_json}
+            context = {
+                "bot_uid": int(self.bot_uid),
+                "target_id": int(target_id),
+                "timestamp": int(time.time()),
+                "share_json": share_json,
+            }
             fields = resolve_placeholders(fields_template, context)
             packet = await GeneRaTePk((await CrEaTe_ProTo(fields)).hex(), '1215', self.key, self.iv)
             if self.chat_writer:
-                self.chat_writer.write(packet); await self.chat_writer.drain()
+                self.chat_writer.write(packet)
+                await self.chat_writer.drain()
                 await asyncio.sleep(0.1)
             return True
         except Exception as e:
-            add_log(f"send_share[{share_name}] err: {e}", "error")
+            console.print(f"[bold red]send_share[{share_name}] err: {e}[/bold red]")
             return False
 
     async def Auto_Room_Welcome(self, room_id, chat_code, user_uid, user_name="Player"):
@@ -865,6 +960,7 @@ class FreeFireBot:
             with web_config_lock:
                 welcome_template = web_config.get("welcome_msg", DEFAULT_WELCOME_MSG)
                 welcome_shares = list(web_config.get("welcome_shares", ["map"]))
+                send_wrr = web_config.get("send_wrr", True)
             welcome_msg = welcome_template.replace("{user_name}", str(user_name))
 
             msg_pkt = await MAHIR_SEnd_RoOm_MsG(room_id, welcome_msg, self.bot_uid, self.key, self.iv)
@@ -872,23 +968,24 @@ class FreeFireBot:
                 self.chat_writer.write(msg_pkt); await self.chat_writer.drain()
             await asyncio.sleep(0.3)
 
-            # ✅ WRR Room Packet — welcome এর পরে
-            try:
-                wrr_pkt = await MAHIR_WRR_Room_Packet(room_id, self.key, self.iv)
-                if wrr_pkt and self.online_writer:
-                    self.online_writer.write(wrr_pkt); await self.online_writer.drain()
-                    add_log(f"[{self.uid}] WRR sent for room {room_id}", "info")
-            except Exception as e:
-                add_log(f"WRR send err: {e}", "error")
-            await asyncio.sleep(0.2)
+            # ✅ WRR packet — right after welcome (and shares)
+            if send_wrr:
+                try:
+                    wrr_pkt = await MAHIR_WRR_Room_Packet(room_id, self.key, self.iv)
+                    if wrr_pkt and self.online_writer:
+                        self.online_writer.write(wrr_pkt)
+                        await self.online_writer.drain()
+                        console.print(f"[bold green]✅ [{self.uid}] WRR Packet Sent[/bold green]")
+                except Exception as we:
+                    console.print(f"[bold red]WRR send err: {we}[/bold red]")
 
             for sh in welcome_shares:
                 await self.send_share(room_id, sh)
                 await asyncio.sleep(0.2)
             curr_time_str = datetime.now().strftime("%I:%M:%S %p")
             update_bot_info(self.uid, last_room_id=str(room_id), last_active=curr_time_str)
-        except Exception as e:
-            add_log(f"Welcome err: {e}", "error")
+        except Exception:
+            pass
 
     def get_room_mode(self):
         with web_config_lock:
@@ -909,11 +1006,12 @@ class FreeFireBot:
         with web_config_lock:
             template = web_config.get("room_name_template", "[B]➥{color}ᎷAH!Ꮢ")
         try: return template.replace("{color}", get_random_color())
-        except: return f"[B]➥{get_random_color()}ᎷAH!Ꮢ"
+        except Exception: return f"[B]➥{get_random_color()}ᎷAH!Ꮢ"
 
     async def tcp_online(self, ip, port, auth_token):
         self.current_room_id = None; self.current_room_name = None
         self.is_in_side2 = False; self.room_members = set()
+        self.seen_recreate_ts = get_recreate_timestamp()
         while self.is_running:
             try:
                 reader, writer = await asyncio.open_connection(ip, int(port))
@@ -921,31 +1019,24 @@ class FreeFireBot:
                 self.reader, self.online_writer = reader, writer
                 self.is_online = True
                 update_bot_info(self.uid, status="✅ Online", room_active=True)
-                add_log(f"[{self.uid}] ONLINE Connected ✅", "success")
+                console.print(f"[bold cyan]ℹ [{self.uid}] ONLINE Connected ✅[/bold cyan]")
 
-                room_name = self.build_room_name()
                 mode_name, fields_template = self.get_room_mode()
                 try:
-                    fields = resolve_placeholders(fields_template, {"room_name": room_name})
-                    proto = await CrEaTe_ProTo(fields)
-                    self.room_pkt = await GeneRaTePk(proto.hex(), '0e0b', self.key, self.iv)
-                    if not self.room_pkt:
+                    if not await self._build_and_send_room(mode_name, fields_template):
                         self.is_online = False; await asyncio.sleep(5); continue
+                    self.room_created = True
                 except Exception as e:
-                    add_log(f"[{self.uid}] ROOM FAIL: {e}", "error")
+                    console.print(f"[bold red]❌ [{self.uid}] ROOM FAIL: {e}[/bold red]")
                     self.is_online = False; await asyncio.sleep(5); continue
 
-                self.online_writer.write(self.room_pkt); await self.online_writer.drain()
-                self.room_created = True
-                add_log(f"[{self.uid}] Room Created ({mode_name}) ✅", "success")
-
                 while self.is_running and self.is_online:
-                    # ✅ Check room recreate request
-                    if check_and_clear_recreate(self.uid):
-                        add_log(f"[{self.uid}] ♻️ Room recreate requested", "warn")
-                        try: writer.close()
-                        except: pass
-                        break
+                    # ===== Check recreate signal =====
+                    cur_ts = get_recreate_timestamp()
+                    if cur_ts > self.seen_recreate_ts:
+                        self.seen_recreate_ts = cur_ts
+                        await self._do_recreate()
+                        continue
 
                     try:
                         data = await asyncio.wait_for(self.reader.read(65536), timeout=5.0)
@@ -971,7 +1062,6 @@ class FreeFireBot:
                                             if 10000000 < int(r_id) < 999999999:
                                                 self.current_room_id = str(r_id)
                                                 self.current_room_name = str(r_name) if r_name else "Unknown"
-                                                add_log(f"[{self.uid}] 🏠 Room {self.current_room_id} | {self.current_room_name}", "success")
                                                 console.print(Panel(
                                                     f"[bold green]🏠 Room Name :[/bold green] [white]{self.current_room_name}[/white]\n"
                                                     f"[bold green]🆔 Room ID   :[/bold green] [bold yellow]{self.current_room_id}[/bold yellow]\n"
@@ -979,6 +1069,7 @@ class FreeFireBot:
                                                     f"[bold cyan]🆔 Bot UID   :[/bold cyan] [white]{self.bot_uid}[/white]",
                                                     title=f"[bold magenta]✨ ROOM ESTABLISHED ({self.uid})[/bold magenta]",
                                                     border_style="cyan"))
+                                                console.print(f"[bold yellow]{self.bot_uid}৷ {self.Nm}[/bold yellow]")
                                                 update_bot_info(self.uid, last_room_id=str(r_id), room_active=True)
                                                 update_active_account(self.uid, **{
                                                     'bot_uid': str(self.bot_uid), 'name': self.Nm,
@@ -1003,12 +1094,12 @@ class FreeFireBot:
                                                 if self.current_room_id and c_code:
                                                     asyncio.create_task(self.Auto_Room_Welcome(self.current_room_id, c_code, uid_str, user_name=p_name))
                                                 self.room_members.add(uid_str)
-                                                add_log(f"[{self.uid}] ➜ Joined: {p_name} ({uid_str})", "info")
+                                                console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold green]➜ Joined:[/bold green] {p_name} ({uid_str})")
 
                                     if cmd_type == 65:
                                         is_full = f5.get('1', {}).get('data')
                                         if is_full == 1 and self.current_room_id:
-                                            add_log(f"!!! ROOM FULL ({self.current_room_id}) — starting...", "warn")
+                                            console.print(f"[bold red]!!! ROOM FULL ({self.current_room_id}) !!![/bold red]")
                                             start_pkt = await Mahir_Room_START(self.current_room_id, self.key, self.iv)
                                             if start_pkt:
                                                 self.online_writer.write(start_pkt); await self.online_writer.drain()
@@ -1018,8 +1109,9 @@ class FreeFireBot:
                                                     self.online_writer.write(exit_pkt); await self.online_writer.drain()
                                                     self.room_members.clear(); self.is_in_side2 = False
                                                     await asyncio.sleep(0.5)
-                                                    self.online_writer.write(self.room_pkt); await self.online_writer.drain()
-                                                    add_log(f"[{self.uid}] New Room created.", "success")
+                                                    mode_name, ft = self.get_room_mode()
+                                                    await self._build_and_send_room(mode_name, ft)
+                                                    console.print(f"[bold cyan][{self.uid}][/bold cyan] [bold green]New Room.[/bold green]")
                                     if cmd_type == 7:
                                         self.room_members.clear()
                                         if self.is_in_side2 and self.current_room_id:
@@ -1028,10 +1120,10 @@ class FreeFireBot:
                                             if back_pkt:
                                                 self.online_writer.write(back_pkt); await self.online_writer.drain()
                                                 self.is_in_side2 = False
-                                except: pass
+                                except Exception: pass
                     except asyncio.TimeoutError: continue
                     except Exception: break
-            except Exception as e:
+            except Exception:
                 self.is_online = False
                 update_active_account(self.uid, room_id='Pending...', room_name='Pending...')
             await asyncio.sleep(10)
@@ -1040,7 +1132,8 @@ class FreeFireBot:
         ctype = cmd.get("type", "message")
         try:
             if ctype == "message":
-                resp = cmd.get("response", "").replace("{user_name}", str(sender_uid))
+                resp = cmd.get("response", "")
+                resp = resp.replace("{user_name}", str(sender_uid))
                 pkt = await MAHIR_SEnd_RoOm_MsG(chat_id, resp, self.bot_uid, self.key, self.iv)
                 if pkt:
                     self.chat_writer.write(pkt); await self.chat_writer.drain()
@@ -1075,13 +1168,26 @@ class FreeFireBot:
                     if pkt:
                         self.chat_writer.write(pkt); await self.chat_writer.drain()
         except Exception as e:
-            add_log(f"Cmd '{cmd_name}' err: {e}", "error")
+            console.print(f"[bold red]Cmd '{cmd_name}' err: {e}[/bold red]")
 
     def _match_command(self, trigger, match_mode, msg_text):
         t = trigger.lower(); m = msg_text.lower()
         if match_mode == "exact": return m == t
         if match_mode == "startswith": return m.startswith(t)
         return t in m
+
+    async def _monitor_restart(self):
+        """Background monitor for restart signal"""
+        while self.is_running:
+            await asyncio.sleep(2)
+            cur_ts = get_restart_timestamp()
+            if cur_ts > self.seen_restart_ts:
+                self.seen_restart_ts = cur_ts
+                console.print(f"[bold yellow]♻️ [{self.uid}] Account restart signal received[/bold yellow]")
+                for t in self.tasks:
+                    if not t.done():
+                        t.cancel()
+                return
 
     async def tcp_chat(self, ip, port, auth_token, key, iv, ready_event):
         while self.is_running:
@@ -1090,7 +1196,7 @@ class FreeFireBot:
                 writer.write(bytes.fromhex(auth_token)); await writer.drain()
                 self.chat_reader = reader; self.chat_writer = writer
                 ready_event.set()
-                add_log(f"[{self.uid}] CHAT Connected ✅", "success")
+                console.print(f"[bold cyan]ℹ [{self.uid}] CHAT Connected ✅[/bold cyan]")
 
                 while self.is_running:
                     try:
@@ -1107,44 +1213,54 @@ class FreeFireBot:
                                     chat_id = f5.get('2', {}).get('data')
                                     sender_uid = f5.get('1', {}).get('data')
                                     if str(sender_uid) == str(self.bot_uid): continue
+
                                     with web_config_lock:
                                         cmds = dict(web_config.get("commands", {}))
+
                                     for trigger, cmd in cmds.items():
                                         if not cmd.get("enabled", True): continue
                                         match_mode = cmd.get("match", "contains")
                                         if self._match_command(trigger, match_mode, msg_text):
                                             asyncio.create_task(self._execute_command(cmd, trigger, chat_id, sender_uid))
                                             break
-                                except: pass
+                                except Exception: pass
                     except asyncio.TimeoutError: continue
                     except Exception: break
-            except: pass
+            except Exception: pass
             await asyncio.sleep(10)
 
     async def keep_online_forever(self):
         global online_count
         while self.is_running:
             try:
+                self.seen_restart_ts = get_restart_timestamp()
+                self.tasks = []
+
                 open_id, access_token = await GeNeRaTeAccAccess(self.uid, self.password)
                 if not open_id:
                     update_bot_info(self.uid, status="❌ Auth Failed", room_active=False)
                     await asyncio.sleep(10); continue
+
                 payload = await EncRypTMajoRLoGin(open_id, access_token, version)
                 response = await MajorLogin(payload)
                 if not response:
                     update_bot_info(self.uid, status="❌ Login Failed", room_active=False)
                     await asyncio.sleep(10); continue
+
                 try: auth_data = await DecRypTMajoRLoGin(response)
                 except:
                     update_bot_info(self.uid, status="❌ Decrypt Failed", room_active=False)
                     await asyncio.sleep(10); continue
+
                 if not getattr(auth_data, 'token', None) or not getattr(auth_data, 'url', None):
                     update_bot_info(self.uid, status="❌ Empty Auth", room_active=False)
                     await asyncio.sleep(10); continue
+
                 login_data = await GetLoginData(auth_data.url, payload, auth_data.token)
                 if not login_data:
                     update_bot_info(self.uid, status="❌ Data Failed", room_active=False)
                     await asyncio.sleep(10); continue
+
                 port_data = PorTs_pb2.GetLoginData()
                 port_data.ParseFromString(login_data)
                 self.key = auth_data.key; self.iv = auth_data.iv
@@ -1163,15 +1279,18 @@ class FreeFireBot:
                     except: self.Nm = f"Player_{str(auth_data.account_uid)[-4:]}"
 
                 update_bot_info(self.uid, account_uid=str(auth_data.account_uid))
+
                 online_ip, online_port = port_data.Online_IP_Port.split(":")
                 chat_ip, chat_port = port_data.AccountIP_Port.split(":")
+
                 online_auth_token = create_auth_token_online(auth_data.account_uid, auth_data.token, auth_data.timestamp, auth_data.key, auth_data.iv)
                 chat_auth_token = create_auth_token_chat(auth_data.account_uid, auth_data.token, auth_data.timestamp, auth_data.key, auth_data.iv)
+
                 if not online_auth_token or not chat_auth_token:
                     update_bot_info(self.uid, status="❌ Token Failed", room_active=False)
                     await asyncio.sleep(10); continue
 
-                add_log(f"✔ BoT OnLiNe: {self.Nm} | UID {self.uid}", "success")
+                console.print(f"[bold green]✔ BoT OnLiNe: {self.Nm} | ChaT: {chat_ip}:{chat_port} | OnLiNe: {online_ip}:{online_port}[/bold green]")
 
                 with active_lock:
                     if not any(a['uid'] == self.uid for a in active_accounts):
@@ -1180,6 +1299,7 @@ class FreeFireBot:
                             'uid': self.uid, 'bot_uid': str(auth_data.account_uid), 'name': self.Nm,
                             'region': self.region or 'BD', 'time': datetime.now().strftime('%H:%M:%S'),
                             'room_id': 'Pending...', 'room_name': 'Pending...'})
+
                 update_bot_info(self.uid, status="✅ Online", account_uid=str(auth_data.account_uid), room_active=True)
 
                 ready = asyncio.Event()
@@ -1188,11 +1308,25 @@ class FreeFireBot:
                 await ready.wait()
                 t2 = asyncio.create_task(self.tcp_online(online_ip, online_port, online_auth_token))
                 self.tasks.append(t2)
-                await asyncio.gather(t1, t2, return_exceptions=True)
+
+                # Monitor for restart signal
+                monitor = asyncio.create_task(self._monitor_restart())
+
+                try:
+                    await asyncio.gather(t1, t2, return_exceptions=True)
+                finally:
+                    if not monitor.done():
+                        monitor.cancel()
+
             except Exception as e:
-                add_log(f"❌ UID {self.uid} Err: {e}", "error")
+                console.print(f"[bold red]❌ UID {self.uid} Err: {e}[/bold red]")
                 update_bot_info(self.uid, status="❌ Error", room_active=False)
             remove_active_account(self.uid)
+
+            # If restart was triggered, quick reconnect
+            if get_restart_timestamp() > self.seen_restart_ts:
+                console.print(f"[bold green]♻️ [{self.uid}] Reconnecting (restart)...[/bold green]")
+                continue
             await asyncio.sleep(10)
 
 # ================================================================
@@ -1215,7 +1349,8 @@ class BotHandler(BaseHTTPRequestHandler):
         try:
             cl = int(self.headers.get('Content-Length', 0))
             return self.rfile.read(cl).decode('utf-8')
-        except: return ""
+        except Exception:
+            return ""
 
     def _html_escape(self, s):
         return (str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
@@ -1238,8 +1373,8 @@ class BotHandler(BaseHTTPRequestHandler):
                 rc_use = web_config.get("use_mode", "all")
                 rc_welcome = web_config.get("welcome_msg", DEFAULT_WELCOME_MSG)
                 rc_welcome_shares = list(web_config.get("welcome_shares", ["map"]))
+                rc_send_wrr = web_config.get("send_wrr", True)
                 all_share_names = list(web_config.get("share_packets", {}).keys())
-                all_command_triggers = list(web_config.get("commands", {}).keys())
                 all_room_modes = list(web_config.get("room_modes", {}).keys())
 
             mode_checkboxes = ""
@@ -1253,6 +1388,7 @@ class BotHandler(BaseHTTPRequestHandler):
                 share_checkboxes += f'<label class="mode-chip"><input type="checkbox" name="welcome_shares" value="{sh}" {checked}><span>{sh}</span></label>'
 
             share_options = "".join(f'<option value="{s}">{s}</option>' for s in all_share_names)
+
             accs_esc = self._html_escape(accs_content)
             welcome_esc = self._html_escape(rc_welcome)
             template_esc = self._html_escape(rc_template)
@@ -1267,7 +1403,7 @@ class BotHandler(BaseHTTPRequestHandler):
 * {{ margin:0; padding:0; box-sizing:border-box; font-family:'Rajdhani',sans-serif; }}
 body {{ background:#030712; color:#f3f4f6; min-height:100vh; padding:20px; background-image: radial-gradient(at 0% 0%, rgba(239,68,68,0.15) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(59,130,246,0.15) 0px, transparent 50%); background-attachment:fixed; }}
 .container {{ max-width:1500px; margin:0 auto; }}
-.header {{ text-align:center; padding:30px; background:rgba(17,24,39,0.7); border:1px solid rgba(255,255,255,0.1); border-radius:20px; margin-bottom:25px; position:relative; overflow:hidden; }}
+.header {{ text-align:center; padding:30px; background:rgba(17,24,39,0.7); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.1); border-radius:20px; margin-bottom:25px; position:relative; overflow:hidden; }}
 .header::before {{ content:''; position:absolute; top:0; left:-100%; width:100%; height:2px; background:linear-gradient(90deg,transparent,#ef4444,#3b82f6,transparent); animation:bar 3s linear infinite; }}
 @keyframes bar {{ 0%{{left:-100%}} 100%{{left:100%}} }}
 .header h1 {{ font-family:'Orbitron',sans-serif; font-size:2.8em; font-weight:900; letter-spacing:4px; background:linear-gradient(135deg,#fff,#ff4b4b 50%,#ff8533); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }}
@@ -1286,21 +1422,21 @@ body {{ background:#030712; color:#f3f4f6; min-height:100vh; padding:20px; backg
 .table-wrapper {{ overflow-x:auto; max-height:500px; overflow-y:auto; border-radius:10px; border:1px solid rgba(255,255,255,0.05); }}
 table {{ width:100%; border-collapse:collapse; text-align:left; }}
 th,td {{ padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:1.05em; white-space:nowrap; }}
-th {{ background:rgba(31,41,55,0.9); color:#f3f4f6; position:sticky; top:0; z-index:5; }}
+th {{ background:rgba(31,41,55,0.9); color:#f3f4f6; position:sticky; top:0; }}
 .badge-online {{ background:rgba(16,185,129,0.15); color:#10b981; padding:4px 10px; border-radius:6px; font-weight:700; border:1px solid rgba(16,185,129,0.3); }}
 .copy-btn {{ background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:5px 12px; border-radius:8px; font-weight:700; cursor:pointer; margin-left:8px; }}
 .copy-btn.copied {{ background:rgba(16,185,129,0.3); color:#10b981; }}
 .copy-all-btn {{ background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:#fff; border:none; padding:10px 20px; border-radius:10px; font-weight:700; cursor:pointer; letter-spacing:1px; }}
-.recreate-btn {{ background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; border:none; padding:5px 10px; border-radius:6px; font-weight:700; cursor:pointer; font-size:0.85em; margin-left:5px; }}
 textarea {{ width:100%; background:rgba(15,23,42,0.8); color:#38bdf8; border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:15px; font-family:'Courier New',monospace; font-size:14px; resize:vertical; outline:none; }}
-textarea:focus {{ border-color:#38bdf8; }}
+textarea:focus {{ border-color:#38bdf8; box-shadow:0 0 15px rgba(56,189,248,0.3); }}
 .btn {{ padding:14px 32px; background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; border:none; border-radius:10px; font-size:1.05em; font-weight:700; cursor:pointer; margin-top:15px; letter-spacing:1px; }}
 .btn:disabled {{ opacity:0.6; cursor:not-allowed; }}
 .btn-green {{ background:linear-gradient(135deg,#10b981,#059669); }}
 .btn-purple {{ background:linear-gradient(135deg,#a855f7,#7c3aed); }}
 .btn-cyan {{ background:linear-gradient(135deg,#06b6d4,#0891b2); }}
 .btn-red {{ background:linear-gradient(135deg,#ef4444,#dc2626); }}
-.btn-orange {{ background:linear-gradient(135deg,#f59e0b,#d97706); }}
+.btn-orange {{ background:linear-gradient(135deg,#f97316,#ea580c); }}
+.btn-pink {{ background:linear-gradient(135deg,#ec4899,#be185d); }}
 .footer {{ text-align:center; padding:20px; color:#6b7280; font-weight:600; }}
 #toast {{ visibility:hidden; min-width:250px; background:#10b981; color:#fff; text-align:center; border-radius:8px; padding:14px; position:fixed; z-index:99; right:30px; bottom:30px; font-weight:bold; opacity:0; transition:opacity 0.3s,bottom 0.3s; }}
 #toast.show {{ visibility:visible; opacity:1; bottom:40px; }}
@@ -1312,10 +1448,12 @@ textarea:focus {{ border-color:#38bdf8; }}
 .mode-chip span {{ font-weight:700; color:#cbd5e1; }}
 .mode-chip input:checked ~ span {{ color:#38bdf8; }}
 .input-text {{ width:100%; padding:12px 16px; background:rgba(15,23,42,0.8); color:#38bdf8; border:1px solid rgba(255,255,255,0.1); border-radius:10px; font-family:'Courier New',monospace; font-size:15px; outline:none; }}
+.input-text:focus {{ border-color:#38bdf8; }}
 .radio-row {{ display:flex; gap:20px; flex-wrap:wrap; }}
 .radio-chip {{ display:inline-flex; align-items:center; gap:8px; background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.3); padding:10px 20px; border-radius:10px; cursor:pointer; }}
 .radio-chip input {{ width:16px; height:16px; accent-color:#a855f7; }}
 .radio-chip span {{ font-weight:700; color:#cbd5e1; }}
+.radio-chip input:checked ~ span {{ color:#a855f7; }}
 .help-text {{ color:#6b7280; font-size:0.85em; margin-top:6px; }}
 .tab-btns {{ display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }}
 .tab-btn {{ padding:10px 20px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.3); border-radius:10px; color:#cbd5e1; font-weight:700; cursor:pointer; }}
@@ -1323,20 +1461,13 @@ textarea:focus {{ border-color:#38bdf8; }}
 .tab-content {{ display:none; }} .tab-content.active {{ display:block; }}
 .list-row {{ display:flex; gap:10px; align-items:center; margin-bottom:10px; padding:12px; background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:10px; }}
 .list-row span.name {{ flex:1; font-weight:700; color:#a78bfa; font-family:'Courier New',monospace; }}
-.add-row {{ display:flex; gap:10px; margin-top:10px; }}
-.add-row input {{ flex:1; padding:10px 14px; background:rgba(15,23,42,0.8); color:#a78bfa; border:1px solid rgba(168,85,247,0.3); border-radius:8px; font-family:'Courier New',monospace; outline:none; }}
 .mode-select {{ padding:10px 16px; background:rgba(15,23,42,0.9); color:#a78bfa; border:1px solid rgba(168,85,247,0.4); border-radius:10px; font-weight:700; cursor:pointer; }}
-.locked-box {{ text-align:center; padding:40px; background:rgba(15,23,42,0.5); border:2px dashed rgba(239,68,68,0.4); border-radius:12px; }}
-.locked-box h4 {{ color:#ef4444; font-family:'Orbitron',sans-serif; font-size:1.3em; margin-bottom:10px; }}
-.locked-box p {{ color:#9ca3af; margin-bottom:15px; }}
-.lock-input {{ padding:12px 20px; background:rgba(15,23,42,0.9); color:#ef4444; border:1px solid rgba(239,68,68,0.5); border-radius:10px; font-family:'Courier New',monospace; font-size:1em; outline:none; width:100%; max-width:400px; }}
-.logs-box {{ background:#000; border:1px solid rgba(56,189,248,0.3); border-radius:12px; padding:15px; height:400px; overflow-y:auto; font-family:'Courier New',monospace; font-size:13px; line-height:1.5; }}
-.log-line {{ padding:3px 5px; border-bottom:1px solid rgba(255,255,255,0.03); }}
-.log-info {{ color:#cbd5e1; }}
-.log-success {{ color:#10b981; }}
-.log-warn {{ color:#f59e0b; }}
-.log-error {{ color:#ef4444; }}
-.log-ts {{ color:#6b7280; margin-right:8px; }}
+.action-bar {{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; padding:18px; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08); border-radius:14px; align-items:center; }}
+.action-bar .btn {{ margin-top:0; padding:12px 24px; font-size:1em; }}
+.lock-box {{ padding:20px; background:rgba(239,68,68,0.08); border:1px dashed rgba(239,68,68,0.4); border-radius:12px; text-align:center; }}
+.lock-box input {{ padding:12px 16px; background:rgba(15,23,42,0.9); color:#facc15; border:1px solid rgba(250,204,21,0.3); border-radius:8px; font-size:15px; width:280px; margin-right:10px; outline:none; }}
+.live-log {{ height:400px; overflow-y:auto; background:#0a0a0a; border-radius:10px; padding:15px; font-family:'Courier New',monospace; font-size:13px; color:#10b981; line-height:1.6; border:1px solid rgba(16,185,129,0.2); }}
+.live-log::-webkit-scrollbar {{ width:8px; }} .live-log::-webkit-scrollbar-thumb {{ background:#10b981; border-radius:4px; }}
 </style>
 </head>
 <body>
@@ -1350,11 +1481,16 @@ textarea:focus {{ border-color:#38bdf8; }}
 <div class="stat-card"><h2 id="stat-version" style="font-size:1.8em;color:#38bdf8;">{cur_ver}</h2><p>📦 VERSION ({cur_rel})</p></div>
 </div>
 
-<!-- ACTION BUTTONS -->
-<div class="section" style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
-<h2 style="flex:1;">🚀 Quick Actions</h2>
-<button class="btn btn-orange" style="margin-top:0;" onclick="restartAllAccounts()">🔄 RESTART ALL ACCOUNTS</button>
-<button class="btn btn-cyan" style="margin-top:0;" onclick="refreshStats()">🔄 REFRESH NOW</button>
+<!-- ===== ACTION BAR (Restart / Recreate) ===== -->
+<div class="section">
+<div class="section-header"><h2>⚡ Quick Actions</h2><div class="live-indicator"><div class="pulse-dot"></div> LIVE</div></div>
+<div class="action-bar">
+<button class="btn btn-orange" id="btn-restart" onclick="doAccountRestart()">♻️ ACCOUNT RESTART (All Bots)</button>
+<button class="btn btn-pink" id="btn-recreate" onclick="doRoomRecreate()">🔄 ROOM RECREATE (Exit + New)</button>
+<div class="help-text" style="flex:1; margin-top:0;">
+💡 <b>Account Restart</b> — সব bot নতুন করে login করবে। <b>Room Recreate</b> — সব bot আগের room exit করে নতুন room বানাবে (কোনো config পরিবর্তন থাকলে নতুন room এ apply হবে)।
+</div>
+</div>
 </div>
 
 <!-- CONFIG TABS -->
@@ -1363,8 +1499,8 @@ textarea:focus {{ border-color:#38bdf8; }}
 <div class="tab-btns">
 <button class="tab-btn active" onclick="switchTab(event,'tab-room')">🎮 Room Config</button>
 <button class="tab-btn" onclick="switchTab(event,'tab-welcome')">💬 Welcome</button>
-<button class="tab-btn" onclick="switchTab(event,'tab-shares')">📤 Shares 🔒</button>
-<button class="tab-btn" onclick="switchTab(event,'tab-packets')">📦 Room Packets 🔒</button>
+<button class="tab-btn" onclick="switchTab(event,'tab-shares')">📤 Shares</button>
+<button class="tab-btn" onclick="switchTab(event,'tab-packets')">📦 Room Packets</button>
 <button class="tab-btn" onclick="switchTab(event,'tab-commands')">⚡ Commands</button>
 <button class="tab-btn" onclick="switchTab(event,'tab-accounts')">👥 Accounts</button>
 </div>
@@ -1373,10 +1509,7 @@ textarea:focus {{ border-color:#38bdf8; }}
 <div id="tab-room" class="tab-content active">
 <form id="room-form" onsubmit="saveRoomConfig(event)">
 <div class="config-grid">
-<div>
-<div class="config-label">🎮 Enabled Room Modes</div>
-<div class="mode-chips">{mode_checkboxes}</div>
-</div>
+<div><div class="config-label">🎮 Enabled Room Modes</div><div class="mode-chips">{mode_checkboxes}</div></div>
 <div>
 <div class="config-label">📝 Room Name Template</div>
 <input type="text" class="input-text" id="room_name_template" value="{template_esc}" placeholder="[B]➥{{color}}ᎷAH!Ꮢ">
@@ -1386,84 +1519,92 @@ textarea:focus {{ border-color:#38bdf8; }}
 <div class="config-label">🎯 Selection Mode</div>
 <div class="radio-row">
 <label class="radio-chip"><input type="radio" name="use_mode" value="all" {"checked" if rc_use=="all" else ""}><span>🔵 ALL</span></label>
-<label class="radio-chip"><input type="radio" name="use_mode" value="half" {"checked" if rc_use=="half" else ""}><span>🟣 HALF (random subset)</span></label>
+<label class="radio-chip"><input type="radio" name="use_mode" value="half" {"checked" if rc_use=="half" else ""}><span>🟣 HALF</span></label>
 </div>
 </div>
+<div><div class="config-label">📤 Auto-send Shares after Welcome</div><div class="mode-chips">{share_checkboxes}</div></div>
 <div>
-<div class="config-label">📤 Auto-send Shares after Welcome</div>
-<div class="mode-chips">{share_checkboxes}</div>
+<label class="mode-chip" style="padding:10px 16px;">
+<input type="checkbox" id="send_wrr_chk" {"checked" if rc_send_wrr else ""}>
+<span>📡 Send WRR Packet after Welcome</span>
+</label>
+<div class="help-text">✅ Welcome msg + Shares এর পরেই WRR packet পাঠাবে (Online server এ)।</div>
 </div>
 <button type="submit" class="btn btn-green" id="room-save-btn">💾 SAVE ROOM CONFIG</button>
 </div>
 </form>
 </div>
 
-<!-- TAB 2: Welcome Message -->
+<!-- TAB 2: Welcome -->
 <div id="tab-welcome" class="tab-content">
 <h3>💬 Welcome Message</h3>
 <textarea id="welcome_msg_ta" style="height:280px; color:#facc15;" spellcheck="false">{welcome_esc}</textarea>
-<div class="help-text">💡 Placeholder: <b>{{user_name}}</b> | Real newlines | Color: <b>[C][FF0000]</b></div>
+<div class="help-text">💡 Placeholder: <b>{{user_name}}</b> → player name. Color codes: <b>[C][FF0000]</b></div>
 <button class="btn btn-cyan" id="welcome-save-btn" onclick="saveWelcomeMsg()">💾 SAVE WELCOME</button>
 </div>
 
-<!-- TAB 3: Share Packets (PASSWORD PROTECTED) -->
+<!-- TAB 3: Shares -->
 <div id="tab-shares" class="tab-content">
-<div id="shares-lock" class="locked-box">
-<h4>🔒 ROOM ACCESS REQUIRED</h4>
-<p>Enter password to view/edit Share Packets</p>
-<input type="password" class="lock-input" id="shares_password_input" placeholder="Enter password..." onkeydown="if(event.key==='Enter')unlockSection('shares')">
-<br><br>
-<button class="btn btn-red" onclick="unlockSection('shares')">🔓 UNLOCK</button>
-</div>
-<div id="shares-content" style="display:none;">
 <h3>📤 Share Packet Manager</h3>
+
+<!-- LOCK -->
+<div class="lock-box packet-locked">
+<div style="color:#facc15;font-weight:700;margin-bottom:10px;">🔒 Locked — Password Required</div>
+<input type="password" id="packet_password_1" placeholder="Enter password (MAHIR ROOM ACCESS)">
+<button class="btn btn-green" style="margin-top:0;" onclick="unlockPackets()">🔓 UNLOCK</button>
+</div>
+
+<!-- UNLOCKED -->
+<div class="packet-unlocked" style="display:none;">
 <div class="config-label">Existing Shares:</div>
 <div id="shares-list"></div>
-<div class="add-row">
-<input type="text" id="new_share_name" placeholder="new share name">
+<div class="add-row" style="display:flex;gap:10px;margin-top:10px;">
+<input type="text" id="new_share_name" class="input-text" placeholder="new share name" style="flex:1;">
 <button class="btn btn-purple" style="margin-top:0;" onclick="addNewShare()">➕ ADD</button>
 </div>
 <hr style="margin:20px 0; border-color:rgba(255,255,255,0.1);">
 <div class="config-label">Edit Share:</div>
 <select id="share_selector" class="mode-select" onchange="loadSelectedShare()"></select>
-<div style="margin-top:15px;">
-<label class="config-label">Enabled: <input type="checkbox" id="share_enabled" style="width:auto;"></label>
-</div>
+<div style="margin-top:15px;"><label class="config-label">Enabled: <input type="checkbox" id="share_enabled" style="width:auto; accent-color:#38bdf8;"></label></div>
 <div class="config-label" style="margin-top:10px;">share_json:</div>
-<textarea id="share_json_ta" style="height:80px;" spellcheck="false"></textarea>
-<div class="config-label" style="margin-top:10px;">Fields (JSON):</div>
-<textarea id="share_fields_ta" style="height:300px; color:#a78bfa;" spellcheck="false"></textarea>
+<textarea id="share_json_ta" style="height:80px;"></textarea>
+<div class="config-label" style="margin-top:10px;">JSON Fields (bytes as {{"__hex__":"..."}}):</div>
+<textarea id="share_fields_ta" style="height:300px; color:#a78bfa;"></textarea>
 <div class="help-text">Placeholders: <b>{{bot_uid}}</b>, <b>{{target_id}}</b>, <b>{{timestamp}}</b>, <b>{{share_json}}</b></div>
 <button class="btn btn-purple" id="share-save-btn" onclick="saveShare()">💾 SAVE SHARE</button>
 <button class="btn btn-red" style="margin-left:10px;" onclick="deleteShare()">🗑️ DELETE</button>
+<button class="btn btn-orange" style="margin-left:10px;" onclick="lockPackets()">🔒 LOCK</button>
 </div>
 </div>
 
-<!-- TAB 4: Room Packets (PASSWORD PROTECTED) -->
+<!-- TAB 4: Room Packets -->
 <div id="tab-packets" class="tab-content">
-<div id="packets-lock" class="locked-box">
-<h4>🔒 ROOM ACCESS REQUIRED</h4>
-<p>Enter password to view/edit Room Packets</p>
-<input type="password" class="lock-input" id="packets_password_input" placeholder="Enter password..." onkeydown="if(event.key==='Enter')unlockSection('packets')">
-<br><br>
-<button class="btn btn-red" onclick="unlockSection('packets')">🔓 UNLOCK</button>
-</div>
-<div id="packets-content" style="display:none;">
 <h3>📦 Room Packet Manager</h3>
+
+<!-- LOCK -->
+<div class="lock-box packet-locked">
+<div style="color:#facc15;font-weight:700;margin-bottom:10px;">🔒 Locked — Password Required</div>
+<input type="password" id="packet_password_2" placeholder="Enter password (MAHIR ROOM ACCESS)">
+<button class="btn btn-green" style="margin-top:0;" onclick="unlockPackets()">🔓 UNLOCK</button>
+</div>
+
+<!-- UNLOCKED -->
+<div class="packet-unlocked" style="display:none;">
 <div class="config-label">Existing Room Modes:</div>
 <div id="modes-list"></div>
-<div class="add-row">
-<input type="text" id="new_mode_name" placeholder="new mode name">
+<div class="add-row" style="display:flex;gap:10px;margin-top:10px;">
+<input type="text" id="new_mode_name" class="input-text" placeholder="new mode name" style="flex:1;">
 <button class="btn btn-purple" style="margin-top:0;" onclick="addNewMode()">➕ ADD</button>
 </div>
 <hr style="margin:20px 0; border-color:rgba(255,255,255,0.1);">
 <div class="config-label">Edit Mode:</div>
 <select id="mode_selector" class="mode-select" onchange="loadSelectedMode()"></select>
-<div class="config-label" style="margin-top:15px;">JSON Fields:</div>
-<textarea id="packet_ta" style="height:400px; color:#a78bfa;" spellcheck="false"></textarea>
-<div class="help-text">Placeholder: <b>{{room_name}}</b> | Bytes → {{"__hex__":"0107..."}}</div>
+<div class="config-label" style="margin-top:15px;">JSON Fields (bytes as {{"__hex__":"..."}}):</div>
+<textarea id="packet_ta" style="height:400px; color:#a78bfa;"></textarea>
+<div class="help-text">Placeholder: <b>{{room_name}}</b>. Bytes → {{"__hex__":"0107..."}}</div>
 <button class="btn btn-purple" id="packet-save-btn" onclick="saveMode()">💾 SAVE MODE</button>
 <button class="btn btn-red" style="margin-left:10px;" onclick="deleteMode()">🗑️ DELETE</button>
+<button class="btn btn-orange" style="margin-left:10px;" onclick="lockPackets()">🔒 LOCK</button>
 </div>
 </div>
 
@@ -1472,16 +1613,14 @@ textarea:focus {{ border-color:#38bdf8; }}
 <h3>⚡ Chat Command Manager</h3>
 <div class="config-label">Existing Commands:</div>
 <div id="commands-list"></div>
-<div class="add-row">
-<input type="text" id="new_command_name" placeholder="new trigger">
+<div class="add-row" style="display:flex;gap:10px;margin-top:10px;">
+<input type="text" id="new_command_name" class="input-text" placeholder="new trigger (e.g. /help)" style="flex:1;">
 <button class="btn btn-purple" style="margin-top:0;" onclick="addNewCommand()">➕ ADD</button>
 </div>
 <hr style="margin:20px 0; border-color:rgba(255,255,255,0.1);">
 <div class="config-label">Edit Command:</div>
 <select id="command_selector" class="mode-select" onchange="loadSelectedCommand()"></select>
-<div style="margin-top:15px;">
-<label class="config-label"><input type="checkbox" id="cmd_enabled" style="width:auto;"> Enabled</label>
-</div>
+<div style="margin-top:15px;"><label class="config-label"><input type="checkbox" id="cmd_enabled" style="width:auto; accent-color:#38bdf8;"> Enabled</label></div>
 <div class="config-label" style="margin-top:10px;">Match Mode:</div>
 <select id="cmd_match" class="mode-select">
 <option value="exact">exact</option>
@@ -1500,8 +1639,8 @@ textarea:focus {{ border-color:#38bdf8; }}
 <select id="cmd_share_name" class="mode-select">{share_options}</select>
 </div>
 <div id="cmd_response_row" style="margin-top:10px;">
-<div class="config-label">Response:</div>
-<textarea id="cmd_response_ta" style="height:200px; color:#facc15;" spellcheck="false"></textarea>
+<div class="config-label">Response Message:</div>
+<textarea id="cmd_response_ta" style="height:200px; color:#facc15;"></textarea>
 </div>
 <button class="btn btn-purple" id="cmd-save-btn" onclick="saveCommand()">💾 SAVE</button>
 <button class="btn btn-red" style="margin-left:10px;" onclick="deleteCommand()">🗑️ DELETE</button>
@@ -1510,9 +1649,9 @@ textarea:focus {{ border-color:#38bdf8; }}
 <!-- TAB 6: Accounts -->
 <div id="tab-accounts" class="tab-content">
 <h3>👥 Account Manager (accs.json)</h3>
+<div class="help-text" style="margin-bottom:12px;">💡 Format: <b>{{"UID": "PASSWORD"}}</b></div>
 <form id="update-form" onsubmit="submitForm(event)">
-<textarea id="bd_content" style="height:400px; color:#38bdf8;" placeholder='{{"12345678": "password"}}' spellcheck="false">{accs_esc}</textarea>
-<br>
+<textarea id="bd_content" style="height:400px; color:#38bdf8;" spellcheck="false">{accs_esc}</textarea>
 <button type="submit" class="btn" id="save-btn">💾 SAVE & START ACCOUNTS</button>
 </form>
 </div>
@@ -1524,29 +1663,27 @@ textarea:focus {{ border-color:#38bdf8; }}
 <div class="section-header">
 <h2>📋 Active Accounts</h2>
 <button class="copy-all-btn" onclick="copyAllRoomIds()">📋 Copy All Room IDs</button>
-<button class="btn btn-orange" style="margin-top:0; margin-left:10px; padding:10px 20px;" onclick="restartAllAccounts()">🔄 RESTART ALL</button>
 <div class="live-indicator"><div class="pulse-dot"></div> LIVE</div>
 </div>
 <div class="table-wrapper">
 <table>
 <thead><tr>
 <th>BOT UID</th><th>UID</th><th>NAME</th><th>REGION</th>
-<th>ROOM ID</th><th>ROOM NAME</th><th>TIME</th><th>STATUS</th><th>ACTION</th>
+<th>ROOM ID</th><th>ROOM NAME</th><th>TIME</th><th>STATUS</th>
 </tr></thead>
-<tbody id="accounts-tbody"><tr><td colspan="9">🔄 Loading...</td></tr></tbody>
+<tbody id="accounts-tbody"><tr><td colspan="8">🔄 Loading...</td></tr></tbody>
 </table>
 </div>
 </div>
 
-<!-- LIVE LOGS -->
+<!-- LIVE LOG -->
 <div class="section">
 <div class="section-header">
-<h2>📜 Live Logs</h2>
-<div class="live-indicator"><div class="pulse-dot"></div> LIVE STREAM</div>
+<h2>📜 Live Log</h2>
+<button class="copy-all-btn" onclick="clearLogView()" style="background:linear-gradient(135deg,#ef4444,#dc2626);">🗑️ CLEAR VIEW</button>
+<div class="live-indicator"><div class="pulse-dot"></div> AUTO-SYNC</div>
 </div>
-<div class="logs-box" id="logs-box">
-<div style="color:#6b7280;">Loading logs...</div>
-</div>
+<div id="live-log" class="live-log">📡 Waiting for logs...</div>
 </div>
 
 <div class="footer"><p>© 2026 MAHIR BOT | Web-Configurable System</p></div>
@@ -1554,12 +1691,11 @@ textarea:focus {{ border-color:#38bdf8; }}
 <div id="toast"></div>
 
 <script>
+const ACCESS_PASSWORD = "MAHIR ROOM ACCESS";
 let allShares = {{}};
 let allCommands = {{}};
 let allModes = {{}};
-let sharesUnlocked = false;
-let packetsUnlocked = false;
-let cachedPassword = '';
+let isUnlocked = false;
 
 /* ===== Tabs ===== */
 function switchTab(e, tabId) {{
@@ -1567,6 +1703,7 @@ document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('activ
 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 document.getElementById(tabId).classList.add('active');
 e.currentTarget.classList.add('active');
+applyUnlockState();
 }}
 
 /* ===== Toast ===== */
@@ -1576,6 +1713,63 @@ t.innerText = msg;
 t.style.background = color || '#10b981';
 t.className = 'show';
 setTimeout(() => {{ t.className = t.className.replace('show', ''); }}, 3000);
+}}
+
+/* ===== Password Lock ===== */
+function unlockPackets() {{
+const p1 = document.getElementById('packet_password_1');
+const p2 = document.getElementById('packet_password_2');
+const pwd = (p1 && p1.value) || (p2 && p2.value) || '';
+if (pwd === ACCESS_PASSWORD) {{
+isUnlocked = true;
+sessionStorage.setItem('mahir_unlocked', '1');
+applyUnlockState();
+showToast('🔓 Unlocked!');
+}} else {{
+showToast('❌ Wrong password!', '#ef4444');
+}}
+}}
+
+function lockPackets() {{
+isUnlocked = false;
+sessionStorage.removeItem('mahir_unlocked');
+applyUnlockState();
+showToast('🔒 Locked!', '#f59e0b');
+}}
+
+function applyUnlockState() {{
+document.querySelectorAll('.packet-locked').forEach(el => el.style.display = isUnlocked ? 'none' : 'block');
+document.querySelectorAll('.packet-unlocked').forEach(el => el.style.display = isUnlocked ? 'block' : 'none');
+}}
+
+if (sessionStorage.getItem('mahir_unlocked') === '1') {{
+isUnlocked = true;
+}}
+applyUnlockState();
+
+/* ===== Quick Actions ===== */
+async function doAccountRestart() {{
+if (!confirm('Restart ALL accounts? (All bots will disconnect and reconnect)')) return;
+const btn = document.getElementById('btn-restart');
+btn.innerText = '⏳ RESTARTING...'; btn.disabled = true;
+try {{
+const res = await fetch('/restart_accounts', {{method:'POST'}});
+if (res.ok) showToast('♻️ Account Restart Triggered!');
+else showToast('❌ Failed!', '#ef4444');
+}} catch (e) {{ showToast('❌ Error!', '#ef4444'); }}
+finally {{ btn.innerText = '♻️ ACCOUNT RESTART (All Bots)'; btn.disabled = false; }}
+}}
+
+async function doRoomRecreate() {{
+if (!confirm('Recreate ALL rooms? (Each bot exits its current room and creates a new one)')) return;
+const btn = document.getElementById('btn-recreate');
+btn.innerText = '⏳ RECREATING...'; btn.disabled = true;
+try {{
+const res = await fetch('/recreate_rooms', {{method:'POST'}});
+if (res.ok) showToast('🔄 Room Recreate Triggered!');
+else showToast('❌ Failed!', '#ef4444');
+}} catch (e) {{ showToast('❌ Error!', '#ef4444'); }}
+finally {{ btn.innerText = '🔄 ROOM RECREATE (Exit + New)'; btn.disabled = false; }}
 }}
 
 /* ===== Stats ===== */
@@ -1598,25 +1792,20 @@ const ridStyle = (rid !== 'Pending...') ? 'color:#facc15;font-weight:bold;' : 'c
 const rnameStyle = (rname !== 'Pending...') ? 'color:#a78bfa;font-weight:bold;' : 'color:#6b7280;';
 const isReady = (rid !== 'Pending...') && (rid !== 'None') && (rid !== 'N/A');
 const cb = isReady ? `<button class="copy-btn" onclick="copyRoomId('${{rid}}',this)">📋</button>` : '';
-html += `<tr>
-<td>${{acc.bot_uid}}</td><td>${{acc.uid}}</td>
+html += `<tr><td>${{acc.bot_uid}}</td><td>${{acc.uid}}</td>
 <td style="color:#38bdf8;font-weight:bold;">${{acc.name}}</td>
 <td style="color:#f59e0b;font-weight:bold;">${{acc.region}}</td>
 <td style="${{ridStyle}}">${{rid}}${{cb}}</td>
 <td style="${{rnameStyle}}">${{rname}}</td>
 <td>${{acc.time}}</td>
-<td><span class="badge-online">● ONLINE</span></td>
-<td><button class="recreate-btn" onclick="recreateRoom('${{acc.uid}}')">♻️ NEW ROOM</button></td>
-</tr>`;
+<td><span class="badge-online">● ONLINE</span></td></tr>`;
 }});
 tbody.innerHTML = html;
 }} else {{
-tbody.innerHTML = '<tr><td colspan="9">⚠️ No active accounts.</td></tr>';
+tbody.innerHTML = '<tr><td colspan="8">⚠️ No active accounts.</td></tr>';
 }}
 }} catch (e) {{ console.error(e); }}
 }}
-
-function refreshStats() {{ fetchStats(); showToast('🔄 Refreshed'); }}
 
 function copyRoomId(rid, el) {{
 navigator.clipboard.writeText(rid).then(() => {{
@@ -1634,53 +1823,26 @@ navigator.clipboard.writeText(ids.join('\\n'));
 showToast('📋 Copied ' + ids.length + ' IDs');
 }}
 
-/* ===== ACTION: Restart all accounts ===== */
-async function restartAllAccounts() {{
-if (!confirm('Restart ALL accounts? All bots will be stopped and relaunched.')) return;
-showToast('🔄 Restarting all accounts...', '#f59e0b');
-const res = await fetch('/api/restart_accounts', {{method:'POST'}});
-if (res.ok) showToast('✅ Restart requested!'); else showToast('❌ Failed', '#ef4444');
+/* ===== Live Log ===== */
+function escapeHtml(s) {{
+return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }}
-
-/* ===== ACTION: Recreate single room ===== */
-async function recreateRoom(uid) {{
-if (!confirm('Recreate room for UID ' + uid + '?')) return;
-const res = await fetch('/api/recreate_room/' + uid, {{method:'POST'}});
-if (res.ok) showToast('♻️ Recreate requested for ' + uid, '#f59e0b');
-else showToast('❌ Failed', '#ef4444');
-}}
-
-/* ===== PASSWORD UNLOCK ===== */
-async function unlockSection(section) {{
-const inputId = section + '_password_input';
-const password = document.getElementById(inputId).value;
-if (!password) return showToast('⚠️ Enter password', '#ef4444');
+let autoScroll = true;
+async function fetchLogs() {{
 try {{
-const res = await fetch('/api/verify_access', {{
-method: 'POST',
-headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-body: 'password=' + encodeURIComponent(password)
-}});
+const res = await fetch('/api/logs');
+if (!res.ok) return;
 const data = await res.json();
-if (data.ok) {{
-cachedPassword = password;
-if (section === 'shares') {{
-sharesUnlocked = true;
-document.getElementById('shares-lock').style.display = 'none';
-document.getElementById('shares-content').style.display = 'block';
-await loadShares();
+const logs = data.logs || [];
+const el = document.getElementById('live-log');
+if (logs.length === 0) {{ el.innerHTML = '📡 Waiting for logs...'; return; }}
+const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+el.innerHTML = logs.map(l => `<div>${{escapeHtml(l)}}</div>`).join('');
+if (wasAtBottom) el.scrollTop = el.scrollHeight;
+}} catch(e) {{}}
 }}
-if (section === 'packets') {{
-packetsUnlocked = true;
-document.getElementById('packets-lock').style.display = 'none';
-document.getElementById('packets-content').style.display = 'block';
-await loadModes();
-}}
-showToast('🔓 Unlocked!');
-}} else {{
-showToast('❌ Wrong password!', '#ef4444');
-}}
-}} catch (e) {{ showToast('❌ Error', '#ef4444'); }}
+function clearLogView() {{
+document.getElementById('live-log').innerHTML = '📡 Cleared. Waiting for logs...';
 }}
 
 /* ===== Room Config ===== */
@@ -1694,11 +1856,13 @@ const shares = Array.from(form.querySelectorAll('input[name="welcome_shares"]:ch
 if (!modes.length) {{ showToast('⚠️ Select a mode!', '#ef4444'); btn.disabled = false; btn.innerText = '💾 SAVE ROOM CONFIG'; return; }}
 const template = document.getElementById('room_name_template').value || '[B]➥{{color}}ᎷAH!Ꮢ';
 const useMode = form.querySelector('input[name="use_mode"]:checked').value;
+const sendWrr = document.getElementById('send_wrr_chk').checked ? '1' : '0';
 const body = new URLSearchParams();
 body.append('enabled_modes', modes.join(','));
 body.append('room_name_template', template);
 body.append('use_mode', useMode);
 body.append('welcome_shares', shares.join(','));
+body.append('send_wrr', sendWrr);
 const res = await fetch('/save_room_config', {{method:'POST', headers:{{'Content-Type':'application/x-www-form-urlencoded'}}, body: body.toString()}});
 if (res.ok) showToast('⚙️ Saved!'); else showToast('❌ Failed', '#ef4444');
 btn.innerText = '💾 SAVE ROOM CONFIG'; btn.disabled = false;
@@ -1721,6 +1885,7 @@ async function loadShares() {{
 const res = await fetch('/api/share_packets');
 allShares = await res.json();
 const list = document.getElementById('shares-list');
+if (list) {{
 list.innerHTML = '';
 Object.entries(allShares).forEach(([name, cfg]) => {{
 const enabled = cfg.enabled !== false;
@@ -1729,12 +1894,18 @@ row.className = 'list-row';
 row.innerHTML = `<span class="name">${{enabled ? '✅' : '❌'}} ${{name}}</span>`;
 list.appendChild(row);
 }});
+}}
 const sel = document.getElementById('share_selector');
+if (sel) {{
 sel.innerHTML = '';
 Object.keys(allShares).forEach(n => {{
 const opt = document.createElement('option'); opt.value = n; opt.text = n; sel.appendChild(opt);
 }});
-if (Object.keys(allShares).length) {{ sel.value = Object.keys(allShares)[0]; loadSelectedShare(); }}
+if (Object.keys(allShares).length) {{
+sel.value = Object.keys(allShares)[0];
+loadSelectedShare();
+}}
+}}
 }}
 
 function loadSelectedShare() {{
@@ -1750,31 +1921,37 @@ const btn = document.getElementById('share-save-btn');
 btn.innerText = '⏳...'; btn.disabled = true;
 try {{
 const n = document.getElementById('share_selector').value;
+if (!n) throw new Error('No share selected');
 const fields = JSON.parse(document.getElementById('share_fields_ta').value);
 const share_json = document.getElementById('share_json_ta').value;
 const enabled = document.getElementById('share_enabled').checked;
 allShares[n] = {{enabled: enabled, share_json: share_json, fields: fields}};
 const res = await fetch('/save_share_packets', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allShares)}});
 if (res.ok) {{ showToast('📤 Saved: ' + n); await loadShares(); }}
+else showToast('❌ Failed', '#ef4444');
 }} catch (e) {{ showToast('❌ ' + e.message, '#ef4444'); }}
 btn.innerText = '💾 SAVE SHARE'; btn.disabled = false;
 }}
 
 async function addNewShare() {{
 const name = document.getElementById('new_share_name').value.trim();
-if (!name) return;
+if (!name) return showToast('⚠️ Enter name', '#ef4444');
+if (allShares[name]) return showToast('⚠️ Exists', '#ef4444');
 allShares[name] = {{enabled: true, share_json: '{{}}', fields: {{}}}};
 const res = await fetch('/save_share_packets', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allShares)}});
 if (res.ok) {{
 showToast('➕ Added: ' + name);
 document.getElementById('new_share_name').value = '';
 await loadShares();
+document.getElementById('share_selector').value = name;
+loadSelectedShare();
 }}
 }}
 
 async function deleteShare() {{
 const n = document.getElementById('share_selector').value;
-if (!n || !confirm('Delete "' + n + '"?')) return;
+if (!n) return;
+if (!confirm('Delete share "' + n + '"?')) return;
 delete allShares[n];
 const res = await fetch('/save_share_packets', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allShares)}});
 if (res.ok) {{ showToast('🗑️ Deleted'); await loadShares(); }}
@@ -1785,6 +1962,7 @@ async function loadModes() {{
 const res = await fetch('/api/room_modes');
 allModes = await res.json();
 const list = document.getElementById('modes-list');
+if (list) {{
 list.innerHTML = '';
 Object.keys(allModes).forEach(n => {{
 const row = document.createElement('div');
@@ -1792,12 +1970,18 @@ row.className = 'list-row';
 row.innerHTML = `<span class="name">${{n}}</span>`;
 list.appendChild(row);
 }});
+}}
 const sel = document.getElementById('mode_selector');
+if (sel) {{
 sel.innerHTML = '';
 Object.keys(allModes).forEach(n => {{
 const opt = document.createElement('option'); opt.value = n; opt.text = n; sel.appendChild(opt);
 }});
-if (Object.keys(allModes).length) {{ sel.value = Object.keys(allModes)[0]; loadSelectedMode(); }}
+if (Object.keys(allModes).length) {{
+sel.value = Object.keys(allModes)[0];
+loadSelectedMode();
+}}
+}}
 }}
 
 function loadSelectedMode() {{
@@ -1810,29 +1994,35 @@ const btn = document.getElementById('packet-save-btn');
 btn.innerText = '⏳...'; btn.disabled = true;
 try {{
 const n = document.getElementById('mode_selector').value;
+if (!n) throw new Error('No mode selected');
 const fields = JSON.parse(document.getElementById('packet_ta').value);
 allModes[n] = fields;
 const res = await fetch('/save_room_modes', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allModes)}});
 if (res.ok) {{ showToast('📦 Saved: ' + n); await loadModes(); }}
+else showToast('❌ Failed', '#ef4444');
 }} catch (e) {{ showToast('❌ ' + e.message, '#ef4444'); }}
 btn.innerText = '💾 SAVE MODE'; btn.disabled = false;
 }}
 
 async function addNewMode() {{
 const name = document.getElementById('new_mode_name').value.trim();
-if (!name) return;
+if (!name) return showToast('⚠️ Enter name', '#ef4444');
+if (allModes[name]) return showToast('⚠️ Exists', '#ef4444');
 allModes[name] = {{1: 2, 2: {{1: 1, 2: 15, 3: 0, 4: "{{room_name}}"}}}};
 const res = await fetch('/save_room_modes', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allModes)}});
 if (res.ok) {{
 showToast('➕ Added: ' + name);
 document.getElementById('new_mode_name').value = '';
 await loadModes();
+document.getElementById('mode_selector').value = name;
+loadSelectedMode();
 }}
 }}
 
 async function deleteMode() {{
 const n = document.getElementById('mode_selector').value;
-if (!n || !confirm('Delete "' + n + '"?')) return;
+if (!n) return;
+if (!confirm('Delete mode "' + n + '"?')) return;
 delete allModes[n];
 const res = await fetch('/save_room_modes', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allModes)}});
 if (res.ok) {{ showToast('🗑️ Deleted'); await loadModes(); }}
@@ -1857,7 +2047,10 @@ sel.innerHTML = '';
 Object.keys(allCommands).forEach(n => {{
 const opt = document.createElement('option'); opt.value = n; opt.text = n; sel.appendChild(opt);
 }});
-if (Object.keys(allCommands).length) {{ sel.value = Object.keys(allCommands)[0]; loadSelectedCommand(); }}
+if (Object.keys(allCommands).length) {{
+sel.value = Object.keys(allCommands)[0];
+loadSelectedCommand();
+}}
 }}
 
 function updateCommandFields() {{
@@ -1882,45 +2075,47 @@ const btn = document.getElementById('cmd-save-btn');
 btn.innerText = '⏳...'; btn.disabled = true;
 try {{
 const n = document.getElementById('command_selector').value;
+if (!n) throw new Error('No command selected');
 const newCfg = {{
 enabled: document.getElementById('cmd_enabled').checked,
 match: document.getElementById('cmd_match').value,
 type: document.getElementById('cmd_type').value,
 }};
-if (newCfg.type === 'message' || newCfg.type === 'share' || newCfg.type === 'welcome') {{
-newCfg.response = document.getElementById('cmd_response_ta').value;
-}}
-if (newCfg.type === 'share') {{
-newCfg.share_name = document.getElementById('cmd_share_name').value;
-}}
+if (newCfg.type === 'message' || newCfg.type === 'share' || newCfg.type === 'welcome') newCfg.response = document.getElementById('cmd_response_ta').value;
+if (newCfg.type === 'share') newCfg.share_name = document.getElementById('cmd_share_name').value;
 allCommands[n] = newCfg;
 const res = await fetch('/save_commands', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allCommands)}});
-if (res.ok) {{ showToast('⚡ Saved'); await loadCommands(); }}
+if (res.ok) {{ showToast('⚡ Saved: ' + n); await loadCommands(); }}
+else showToast('❌ Failed', '#ef4444');
 }} catch (e) {{ showToast('❌ ' + e.message, '#ef4444'); }}
-btn.innerText = '💾 SAVE'; btn.disabled = false;
+btn.innerText = '💾 SAVE COMMAND'; btn.disabled = false;
 }}
 
 async function addNewCommand() {{
 const name = document.getElementById('new_command_name').value.trim();
-if (!name) return;
+if (!name) return showToast('⚠️ Enter trigger', '#ef4444');
+if (allCommands[name]) return showToast('⚠️ Exists', '#ef4444');
 allCommands[name] = {{enabled: true, match: 'contains', type: 'message', response: 'Hello!'}};
 const res = await fetch('/save_commands', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allCommands)}});
 if (res.ok) {{
 showToast('➕ Added: ' + name);
 document.getElementById('new_command_name').value = '';
 await loadCommands();
+document.getElementById('command_selector').value = name;
+loadSelectedCommand();
 }}
 }}
 
 async function deleteCommand() {{
 const n = document.getElementById('command_selector').value;
-if (!n || !confirm('Delete "' + n + '"?')) return;
+if (!n) return;
+if (!confirm('Delete "' + n + '"?')) return;
 delete allCommands[n];
 const res = await fetch('/save_commands', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(allCommands)}});
 if (res.ok) {{ showToast('🗑️ Deleted'); await loadCommands(); }}
 }}
 
-/* ===== Accounts JSON ===== */
+/* ===== Accounts ===== */
 async function submitForm(e) {{
 e.preventDefault();
 const btn = document.getElementById('save-btn');
@@ -1931,33 +2126,13 @@ if (res.ok) {{ showToast('💾 Saved!'); fetchStats(); }} else showToast('❌ Fa
 btn.innerText = '💾 SAVE & START ACCOUNTS'; btn.disabled = false;
 }}
 
-/* ===== LIVE LOGS ===== */
-let logAutoScroll = true;
-async function fetchLogs() {{
-try {{
-const res = await fetch('/api/logs');
-if (!res.ok) return;
-const data = await res.json();
-const box = document.getElementById('logs-box');
-let html = '';
-(data.logs || []).forEach(l => {{
-const cls = 'log-' + (l.level || 'info');
-html += `<div class="log-line ${{cls}}"><span class="log-ts">[${{l.ts}}]</span>${{escapeHtml(l.msg)}}</div>`;
-}});
-box.innerHTML = html || '<div style="color:#6b7280;">No logs yet...</div>';
-if (logAutoScroll) box.scrollTop = box.scrollHeight;
-}} catch (e) {{}}
-}}
-
-function escapeHtml(s) {{
-return String(s).replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
-}}
-
 /* ===== INIT ===== */
 fetchStats();
-fetchLogs();
 setInterval(fetchStats, 2000);
-setInterval(fetchLogs, 1500);
+fetchLogs();
+setInterval(fetchLogs, 2500);
+loadShares();
+loadModes();
 loadCommands();
 </script>
 </body>
@@ -1966,11 +2141,6 @@ loadCommands();
             return
 
         # ===== GET APIs =====
-        if self.path == '/api/logs':
-            with log_lock:
-                logs = list(log_buffer[-150:])
-            self._json_response({"logs": logs}); return
-
         if self.path == '/api/stats':
             with active_lock:
                 accs = list(active_accounts); oc = online_count
@@ -1978,6 +2148,12 @@ loadCommands();
             except: total = 0
             self._json_response({'online': oc, 'total': total, 'threads': len(accs),
                 'version': version or "loading...", 'release': ob or "loading...", 'accounts': accs})
+            return
+
+        if self.path == '/api/logs':
+            with log_lock:
+                logs = list(log_buffer)
+            self._json_response({'logs': logs})
             return
 
         if self.path == '/api/room_modes':
@@ -1992,35 +2168,21 @@ loadCommands();
             with web_config_lock: cmds = to_json_safe(web_config.get("commands", {}))
             self._json_response(cmds); return
 
+        if self.path == '/status':
+            with bot_lock: sc = bot_status.copy()
+            accs = load_accounts()
+            self._json_response({"total_accs": len(accs), "bots": sc}); return
+
+        if self.path == '/get_accs':
+            try:
+                with open("accs.json", "r", encoding="utf-8") as f: c = f.read()
+            except: c = "{}"
+            self._text_response(c); return
+
         self.send_response(404); self.end_headers()
 
     def do_POST(self):
         raw = self._read_body()
-
-        # ===== Verify access =====
-        if self.path == '/api/verify_access':
-            params = parse_qs(raw)
-            pw = params.get('password', [''])[0]
-            if pw == ACCESS_PASSWORD:
-                self._json_response({"ok": True})
-                add_log("🔓 Access granted", "success")
-            else:
-                self._json_response({"ok": False})
-                add_log(f"❌ Wrong access password attempt", "warn")
-            return
-
-        # ===== Restart all accounts =====
-        if self.path == '/api/restart_accounts':
-            request_restart_all()
-            add_log("🔄 Restart all accounts requested via Web", "warn")
-            self._text_response('OK'); return
-
-        # ===== Recreate room for a bot =====
-        if self.path.startswith('/api/recreate_room/'):
-            uid = self.path.split('/')[-1]
-            request_room_recreate(uid)
-            add_log(f"♻️ Room recreate requested for UID {uid}", "warn")
-            self._text_response('OK'); return
 
         if self.path in ('/update', '/save_accs'):
             if self.path == '/update':
@@ -2034,11 +2196,21 @@ loadCommands();
                 parsed = json.loads(new_content)
                 with open("accs.json", "w", encoding="utf-8") as f:
                     json.dump(parsed, f, indent=4)
-                add_log("accs.json updated via Web", "success")
+                console.print("[bold yellow]accs.json updated.[/bold yellow]")
                 self._text_response('OK')
             except Exception as e:
                 self._text_response(f"Invalid JSON: {e}", 400)
             return
+
+        if self.path == '/restart_accounts':
+            trigger_restart_all()
+            console.print("[bold yellow]♻️ Account restart signal sent to all bots[/bold yellow]")
+            self._text_response('OK'); return
+
+        if self.path == '/recreate_rooms':
+            trigger_recreate_all()
+            console.print("[bold yellow]🔄 Room recreate signal sent to all bots[/bold yellow]")
+            self._text_response('OK'); return
 
         if self.path == '/save_room_config':
             params = parse_qs(raw)
@@ -2049,13 +2221,16 @@ loadCommands();
             if use_mode not in ('all', 'half'): use_mode = 'all'
             shares_raw = params.get('welcome_shares', [''])[0]
             shares = [s.strip() for s in shares_raw.split(',') if s.strip()]
+            send_wrr = params.get('send_wrr', ['0'])[0] == '1'
+
             with web_config_lock:
                 web_config['enabled_modes'] = modes if modes else ["Room1v1", "Room2v2"]
                 web_config['room_name_template'] = template
                 web_config['use_mode'] = use_mode
                 web_config['welcome_shares'] = shares
+                web_config['send_wrr'] = send_wrr
             save_web_config()
-            add_log(f"⚙️ Room Config: modes={modes} use={use_mode}", "success")
+            console.print(f"[bold green]⚙️ Room Config Updated[/bold green]")
             self._text_response('OK'); return
 
         if self.path == '/save_welcome_msg':
@@ -2063,20 +2238,18 @@ loadCommands();
             msg = params.get('welcome_msg', [''])[0] or DEFAULT_WELCOME_MSG
             with web_config_lock: web_config['welcome_msg'] = msg
             save_web_config()
-            add_log("💬 Welcome Msg Updated", "success")
+            console.print(f"[bold green]💬 Welcome Msg Updated[/bold green]")
             self._text_response('OK'); return
 
         if self.path == '/save_room_modes':
             try:
                 data = json.loads(raw)
-                if not isinstance(data, dict): raise ValueError("Expected dict")
                 parsed_modes = {}
                 for name, fields in data.items():
                     parsed_modes[name] = from_json_safe(fields)
-                if not parsed_modes: raise ValueError("Empty")
                 with web_config_lock: web_config['room_modes'] = parsed_modes
                 save_web_config()
-                add_log(f"📦 Room Modes saved: {list(parsed_modes.keys())}", "success")
+                console.print(f"[bold green]📦 Room Modes Updated[/bold green]")
                 self._text_response('OK')
             except Exception as e:
                 self._text_response(f"Invalid: {e}", 400)
@@ -2085,14 +2258,12 @@ loadCommands();
         if self.path == '/save_share_packets':
             try:
                 data = json.loads(raw)
-                if not isinstance(data, dict): raise ValueError("Expected dict")
                 parsed = {}
                 for name, cfg in data.items():
-                    if isinstance(cfg, dict):
-                        parsed[name] = from_json_safe(cfg)
+                    if isinstance(cfg, dict): parsed[name] = from_json_safe(cfg)
                 with web_config_lock: web_config['share_packets'] = parsed
                 save_web_config()
-                add_log(f"📤 Share Packets saved: {list(parsed.keys())}", "success")
+                console.print(f"[bold green]📤 Share Packets Updated[/bold green]")
                 self._text_response('OK')
             except Exception as e:
                 self._text_response(f"Invalid: {e}", 400)
@@ -2101,18 +2272,22 @@ loadCommands();
         if self.path == '/save_commands':
             try:
                 data = json.loads(raw)
-                if not isinstance(data, dict): raise ValueError("Expected dict")
                 parsed = {}
                 for name, cfg in data.items():
-                    if isinstance(cfg, dict):
-                        parsed[name] = from_json_safe(cfg)
+                    if isinstance(cfg, dict): parsed[name] = from_json_safe(cfg)
                 with web_config_lock: web_config['commands'] = parsed
                 save_web_config()
-                add_log(f"⚡ Commands saved: {list(parsed.keys())}", "success")
+                console.print(f"[bold green]⚡ Commands Updated[/bold green]")
                 self._text_response('OK')
             except Exception as e:
                 self._text_response(f"Invalid: {e}", 400)
             return
+
+        if self.path == '/reset_room_modes':
+            with web_config_lock:
+                web_config['room_modes'] = {k: _deep_copy_defaults(v) for k, v in DEFAULT_ROOM_MODES.items()}
+            save_web_config()
+            self._text_response('OK'); return
 
         self.send_response(404); self.end_headers()
 
@@ -2122,11 +2297,11 @@ def start_web_server():
     port = 8080
     try:
         server = HTTPServer(('0.0.0.0', port), BotHandler)
-        add_log(f"🌐 Dashboard: http://localhost:{port}", "success")
+        console.print(f"[bold green]🌐 Dashboard: http://localhost:{port}[/bold green]")
         webbrowser.open(f'http://localhost:{port}')
         server.serve_forever()
     except OSError:
-        add_log(f"❌ Port {port} in use.", "error")
+        console.print(f"[bold red]❌ Port {port} in use.[/bold red]")
 
 async def main_async():
     print(render('MAHIR', colors=['white', 'red'], align='center'))
@@ -2138,9 +2313,11 @@ async def main_async():
     console.print(Panel(
         "[bold green]✅ System Active[/bold green]\n"
         "[cyan]🌐 http://localhost:8080[/cyan]\n"
-        "[magenta]🔒 Access Password: MAHIR ROOM ACCESS[/magenta]\n"
-        "[yellow]💬 WRR: after welcome[/yellow]\n"
-        "[blue]📜 Live Logs: enabled[/blue]",
+        "[magenta]📡 WRR: After Welcome[/magenta]\n"
+        "[yellow]💬 Welcome: Web editable[/yellow]\n"
+        "[blue]📤 Shares: Web editable[/blue]\n"
+        "[red]⚡ Commands: Web editable[/red]\n"
+        "[bold]🔒 Packet Fields: Password Protected[/bold]",
         title="[bold red]🔥 MAHIR SYSTEM 🔥[/bold red]",
         border_style="bright_red", expand=False))
     while True: await asyncio.sleep(3600)
